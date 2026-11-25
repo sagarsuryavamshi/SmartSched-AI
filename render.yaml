@@ -1,10 +1,29 @@
+# ==============================================================================
+# SmartSched AI — Render Blueprint: Zero-Cost Student Tier Deployment
+# ==============================================================================
+# This configuration runs 100% within Render's Free Web Service tier ($0.00/mo).
+# It does NOT provision any paid or expiring PostgreSQL database on Render.
+# Database: External free PostgreSQL (e.g. Neon.tech Serverless Postgres).
+#
+# ZERO-COST ARCHITECTURE:
+# 1. Web Service Plan: "free" (512 MB RAM, 0.1 CPU).
+#    - Cost: $0/month.
+#    - Uses dynamic $PORT assigned by Render environment.
+#
+# 2. Database: External Neon.tech PostgreSQL (Free Tier)
+#    - Cost: $0/month (1 GB storage, does not expire).
+#    - The DATABASE_URL is set securely in the Render dashboard.
+# ==============================================================================
+
 services:
-  # 1. FastAPI Backend Web Service
+  # 1. FastAPI Backend Web Service (Free Tier)
   - type: web
     name: smartsched-backend
     runtime: python
+    plan: free
     buildCommand: "pip install -r requirements.txt"
     startCommand: "uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /api/v1/health
     envVars:
       - key: PYTHON_VERSION
         value: 3.9.18
@@ -13,18 +32,12 @@ services:
       - key: DEBUG
         value: "false"
       - key: DATABASE_URL
-        fromDatabase:
-          name: smartsched-postgres
-          property: connectionString
+        sync: false # Set securely in Render dashboard with your Neon connection string
       - key: JWT_SECRET_KEY
         generateValue: true
+      - key: JWT_ALGORITHM
+        value: "HS256"
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "1440"
       - key: CORS_ORIGINS
-        value: "https://smartsched-ai.vercel.app"
-
-databases:
-  # 2. Managed PostgreSQL Database
-  - name: smartsched-postgres
-    databaseName: smartsched_db
-    user: smartsched_user
-    plan: standard
-    ipAllowList: [] # Only internal Render network by default
+        value: "https://smartsched-ai.vercel.app,http://localhost:3000"
