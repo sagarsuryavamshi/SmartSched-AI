@@ -1,0 +1,45 @@
+# ==============================================================================
+# SmartSched AI — Render Blueprint: Zero-Cost Student Tier Deployment
+# ==============================================================================
+# This configuration runs 100% within Render's Free Web Service tier.
+# It does NOT provision any paid or expiring PostgreSQL database on Render.
+# Database: External free PostgreSQL (Neon.tech Serverless Postgres).
+#
+# IMPORTANT ZERO-COST ARCHITECTURE NOTES:
+# 1. Web Service Plan: "free" (512 MB RAM, 0.1 CPU).
+#    - Spins down after 15 minutes of inactivity (cold start ~50s on next request).
+#    - 750 free instance hours per month.
+#    - Uses dynamic $PORT assigned by Render environment.
+#
+# 2. External Database: Neon.tech Serverless PostgreSQL
+#    - Zero cost, 1 GB storage, SSL-enabled (sslmode=require).
+#    - Does NOT expire after 30 days (unlike Render's free PostgreSQL).
+#    - The DATABASE_URL is set as a secure environment variable (synced via Render Dashboard).
+# ==============================================================================
+
+services:
+  # 1. FastAPI Backend Web Service (Free Tier)
+  - type: web
+    name: smartsched-backend-free
+    runtime: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.9.18
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: DATABASE_URL
+        sync: false # Set securely in Render dashboard with Neon.tech connection string
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: JWT_ALGORITHM
+        value: "HS256"
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "1440"
+      - key: CORS_ORIGINS
+        value: "https://smartsched-ai.vercel.app,http://localhost:3000"

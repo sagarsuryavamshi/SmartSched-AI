@@ -125,7 +125,7 @@ CREATE TABLE rescheduling_history (
 CREATE INDEX idx_rh_change_id ON rescheduling_history(change_id);
 """
 
-def migrate():
+def migrate(drop_existing: bool = False):
     print(f"Connecting to source SQLite: {SQLITE_DB_PATH}")
     sqlite_conn = sqlite3.connect(str(SQLITE_DB_PATH))
     sqlite_conn.row_factory = sqlite3.Row
@@ -135,9 +135,44 @@ def migrate():
     pg_conn = psycopg2.connect(POSTGRES_URL)
     pg_cur = pg_conn.cursor()
 
-    # 1. Execute DDL
-    print("Creating PostgreSQL tables and indexes...")
-    pg_cur.execute(CREATE_TABLES_SQL)
+    # Safety check: if target database already contains data and drop_existing is False, abort or skip
+    pg_cur.execute("""
+        SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'classrooms'
+        );
+    """)
+    table_exists = pg_cur.fetchone()[0]
+    if table_exists and not drop_existing:
+        pg_cur.execute("SELECT COUNT(*) FROM classrooms;")
+        existing_rooms = pg_cur.fetchone()[0]
+        if existing_rooms > 0:
+            print(f"Target PostgreSQL already contains {existing_rooms} classrooms.")
+            print("Safely preserving existing production data. Pass --drop-existing or DROP_EXISTING=true to re-initialize.")
+            sqlite_conn.close()
+            pg_conn.close()
+            return
+
+    # 1. Execute DDL (Only drops if drop_existing is True)
+    if drop_existing:
+        print("Dropping existing tables and rebuilding schema...")
+        pg_cur.execute("""
+            DROP TABLE IF EXISTS rescheduling_history CASCADE;
+            DROP TABLE IF EXISTS scheduled_assignments CASCADE;
+            DROP TABLE IF EXISTS courses CASCADE;
+            DROP TABLE IF EXISTS student_groups CASCADE;
+            DROP TABLE IF EXISTS faculty CASCADE;
+            DROP TABLE IF EXISTS classrooms CASCADE;
+            DROP TABLE IF EXISTS timeslots CASCADE;
+        """)
+    else:
+        print("Ensuring PostgreSQL tables and indexes exist (safe idempotent DDL)...")
+
+    # DDL with CREATE TABLE IF NOT EXISTS
+    ddl_safe = CREATE_TABLES_SQL.replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS")
+    # Strip the DROP statements from CREATE_TABLES_SQL if present
+    ddl_safe_clean = "\n".join(line for line in ddl_safe.splitlines() if not line.strip().startswith("DROP TABLE"))
+    pg_cur.execute(ddl_safe_clean)
     pg_conn.commit()
 
     # 2. Transfer Classrooms
@@ -210,4 +245,6 @@ def migrate():
     print("\nPostgreSQL Database Migration successfully executed and verified!")
 
 if __name__ == "__main__":
-    migrate()
+    import sys
+    drop_flag = "--drop-existing" in sys.argv or os.getenv("DROP_EXISTING", "false").lower() in ("true", "1")
+    migrate(drop_existing=drop_flag)
