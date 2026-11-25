@@ -1,0 +1,22 @@
+version: "3.8"
+
+services:
+  smartsched-ai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: smartsched_ai_app
+    ports:
+      - "8501:8501"
+    environment:
+      - SMARTSCHED_DB_PATH=/app/data/smartsched.db
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_HEADLESS=true
+    volumes:
+      # Persistent volume mount for SQLite database ensuring persistence across restarts
+      - smartsched_data:/app/data
+    restart: unless-stopped
+
+volumes:
+  smartsched_data:
+    driver: local

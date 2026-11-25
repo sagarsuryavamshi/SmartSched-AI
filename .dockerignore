@@ -1,0 +1,30 @@
+# Git & Version Control
+.git
+.gitignore
+
+# Python Virtual Environments & Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+ENV/
+
+# Testing & Cache
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# Local database and artifacts
+data/*.db
+data/*.db-journal
+data/*.db-wal
+*.png
+capture_phase6.py
+debug_sel.py
+
+# OS Specific
+.DS_Store
+Thumbs.db

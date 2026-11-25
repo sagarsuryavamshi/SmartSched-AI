@@ -1,0 +1,30 @@
+services:
+  # 1. FastAPI Backend Web Service
+  - type: web
+    name: smartsched-backend
+    runtime: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.9.18
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: smartsched-postgres
+          property: connectionString
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: CORS_ORIGINS
+        value: "https://smartsched-ai.vercel.app"
+
+databases:
+  # 2. Managed PostgreSQL Database
+  - name: smartsched-postgres
+    databaseName: smartsched_db
+    user: smartsched_user
+    plan: standard
+    ipAllowList: [] # Only internal Render network by default
