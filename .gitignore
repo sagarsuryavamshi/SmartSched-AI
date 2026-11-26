@@ -71,3 +71,6 @@ coverage.xml
 /tmp/
 debug_sel.py
 capture_phase6.py
+
+# Local documentation reports (excluded from GitHub)
+docs/
