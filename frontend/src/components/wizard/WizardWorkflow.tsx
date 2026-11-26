@@ -80,11 +80,15 @@ export function WizardWorkflow() {
 
   const [stepError, setStepError] = useState<string | null>(null);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [saveToast, setSaveToast] = useState(false);
+  const [downloadToast, setDownloadToast] = useState<string | null>(null);
   const [dispatchStatus, setDispatchStatus] = useState<{
     submitted: boolean;
     jobId?: string;
     message?: string;
+    runId?: string;
   }>({ submitted: false });
 
   // Filtered resources based on wizard selection
@@ -125,13 +129,49 @@ export function WizardWorkflow() {
   };
 
   const handleSubmitOptimization = async () => {
-    const payload = OptimizationService.formatPayload(state);
-    const res = await OptimizationService.submitOptimizationRun(payload);
-    setDispatchStatus({
-      submitted: true,
-      jobId: res.job_id,
-      message: res.message,
-    });
+    setIsSubmitting(true);
+    setStepError(null);
+    try {
+      const payload = OptimizationService.formatPayload(state);
+      const res = await OptimizationService.submitOptimizationRun(payload);
+      setDispatchStatus({
+        submitted: true,
+        jobId: res.job_id || res.run_id || "RUN_DISPATCHED",
+        message: res.message,
+        runId: res.run_id,
+      });
+      setIsSubmitModalOpen(true);
+    } catch (err: any) {
+      setStepError(err.message || "Failed to submit optimization configuration.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDownloadExport = async (format: "csv" | "pdf") => {
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+    const endpoint = `${apiBase}/timetable/export/${format}`;
+    setDownloadToast(`Preparing ${format.toUpperCase()} export...`);
+    try {
+      const res = await fetch(endpoint);
+      if (!res.ok) {
+        throw new Error(`Export server responded with status ${res.status}`);
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `smartsched_timetable_${state.department.replace(/\s+/g, "_")}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      setDownloadToast(`Downloaded ${format.toUpperCase()} successfully!`);
+      setTimeout(() => setDownloadToast(null), 3000);
+    } catch (err: any) {
+      setDownloadToast(`Export failed: ${err.message}`);
+      setTimeout(() => setDownloadToast(null), 4000);
+    }
   };
 
   return (
@@ -375,6 +415,9 @@ export function WizardWorkflow() {
             onNavigateStep={(s: number) => setCurrentStep(s)}
             dispatchStatus={dispatchStatus}
             onDispatch={handleSubmitOptimization}
+            isSubmitting={isSubmitting}
+            onDownload={handleDownloadExport}
+            downloadToast={downloadToast}
           />
         )}
       </div>
@@ -411,10 +454,20 @@ export function WizardWorkflow() {
             <Button
               variant="primary"
               onClick={handleSubmitOptimization}
-              className="text-xs px-5 bg-emerald-600 hover:bg-emerald-700"
+              disabled={isSubmitting}
+              className="text-xs px-5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
             >
-              <Check className="w-4 h-4 mr-1.5" />
-              <span>Confirm & Submit Configuration</span>
+              {isSubmitting ? (
+                <>
+                  <RotateCcw className="w-4 h-4 mr-1.5 animate-spin" />
+                  <span>Submitting to Solver...</span>
+                </>
+              ) : (
+                <>
+                  <Check className="w-4 h-4 mr-1.5" />
+                  <span>Confirm & Submit Configuration</span>
+                </>
+              )}
             </Button>
           )}
         </div>
@@ -440,6 +493,54 @@ export function WizardWorkflow() {
             </Button>
             <Button variant="danger" size="sm" onClick={handleConfirmReset}>
               Reset to Baseline
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Submission Success & Dispatch Modal */}
+      <Modal
+        isOpen={isSubmitModalOpen}
+        onClose={() => setIsSubmitModalOpen(false)}
+        title="Optimization Configuration Submitted"
+      >
+        <div className="space-y-4 text-xs">
+          <div className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800">
+            <CheckCircle2 className="w-6 h-6 text-emerald-600 flex-shrink-0" />
+            <div>
+              <div className="font-bold">Configuration Dispatched to Solver Engine</div>
+              <div className="text-[11px] text-emerald-700">{dispatchStatus.message}</div>
+            </div>
+          </div>
+
+          <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+            <div className="flex justify-between items-center">
+              <span className="text-slate-500">Run / Job Reference:</span>
+              <code className="font-mono bg-white px-2 py-0.5 rounded border border-slate-300 font-bold text-navy-900">
+                {dispatchStatus.jobId}
+              </code>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-slate-500">Selected Paradigm:</span>
+              <span className="font-semibold text-navy-900">
+                {state.algorithm === "GA" ? "Genetic Algorithm" : "Backtracking CSP"}
+              </span>
+            </div>
+          </div>
+
+          <p className="text-slate-600 text-[11px] leading-relaxed">
+            The optimization run has been persisted to the database. You can now view the generated timetable grid, inspect constraint violations, or export certified documents.
+          </p>
+
+          <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+            <Link href="/timetable">
+              <Button variant="primary" size="sm">
+                <span>View Timetable Grid</span>
+                <ChevronRight className="w-3.5 h-3.5 ml-1" />
+              </Button>
+            </Link>
+            <Button variant="outline" size="sm" onClick={() => setIsSubmitModalOpen(false)}>
+              Close
             </Button>
           </div>
         </div>
@@ -1557,6 +1658,9 @@ function Step10ReviewAndExport({
   onNavigateStep,
   dispatchStatus,
   onDispatch,
+  isSubmitting,
+  onDownload,
+  downloadToast,
 }: any) {
   return (
     <div className="space-y-6">
@@ -1566,6 +1670,15 @@ function Step10ReviewAndExport({
           title="Step 10: Final Review & Optimization Submission"
           description="Verify the entire configuration before institutional dispatch."
         />
+
+        {downloadToast && (
+          <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-800 text-xs flex items-center justify-between animate-fade-in">
+            <div className="flex items-center gap-2">
+              <Info className="w-4 h-4 text-blue-600" />
+              <span>{downloadToast}</span>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
           {/* Operational Scope */}
@@ -1650,11 +1763,21 @@ function Step10ReviewAndExport({
         <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
           <span className="font-bold text-navy-900 text-xs block">Export Certified Institutional Documents</span>
           <div className="flex flex-wrap gap-3">
-            <Button variant="outline" size="sm" className="text-xs">
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs hover:border-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 transition-colors"
+              onClick={() => onDownload?.("csv")}
+            >
               <FileSpreadsheet className="w-4 h-4 mr-1.5 text-emerald-600" />
               <span>Download Timetable CSV</span>
             </Button>
-            <Button variant="outline" size="sm" className="text-xs">
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs hover:border-red-500 hover:text-red-700 hover:bg-red-50 transition-colors"
+              onClick={() => onDownload?.("pdf")}
+            >
               <FileText className="w-4 h-4 mr-1.5 text-red-600" />
               <span>Download Official PDF Schedule</span>
             </Button>

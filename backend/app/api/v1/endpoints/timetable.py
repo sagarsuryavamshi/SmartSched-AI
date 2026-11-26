@@ -5,6 +5,7 @@ import csv
 
 from backend.app.core.config import settings
 from src.database.timetable_repository import load_saved_timetable
+from src.utils.export_service import export_timetable_to_csv, export_timetable_to_pdf
 
 router = APIRouter()
 DB_PATH = str(settings.DB_PATH)
@@ -41,32 +42,25 @@ def export_timetable_csv(run_id: Optional[str] = None):
     if not records:
         raise HTTPException(status_code=404, detail="No timetable sessions available to export")
 
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow([
-        "ID", "Assignment ID", "Run ID", "Course Code", "Course Title",
-        "Faculty Name", "Student Group", "Classroom", "Room Type",
-        "Day", "Start Time", "End Time", "Duration (min)"
-    ])
-    for r in records:
-        writer.writerow([
-            r.get("id"),
-            r.get("assignment_id"),
-            r.get("generation_run_id"),
-            r.get("course_code"),
-            r.get("course_title"),
-            r.get("faculty_name"),
-            r.get("group_name"),
-            r.get("room_name"),
-            r.get("room_type"),
-            r.get("day"),
-            r.get("start_time"),
-            r.get("end_time"),
-            r.get("duration_minutes")
-        ])
-
+    csv_content = export_timetable_to_csv(records)
     return Response(
-        content=output.getvalue(),
+        content=csv_content,
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=smartsched_timetable_{run_id or 'latest'}.csv"}
+    )
+
+@router.get("/export/pdf")
+def export_timetable_pdf(run_id: Optional[str] = None):
+    records = load_saved_timetable(run_id=run_id, db_path=DB_PATH)
+    if not records:
+        raise HTTPException(status_code=404, detail="No timetable sessions available to export")
+
+    pdf_bytes = export_timetable_to_pdf(
+        records,
+        title=f"SmartSched AI University Timetable (Run: {run_id or 'Latest'})"
+    )
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=smartsched_timetable_{run_id or 'latest'}.pdf"}
     )

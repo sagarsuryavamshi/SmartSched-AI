@@ -11,6 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.app.core.config import settings
 from backend.app.api.v1.router import api_router
+from src.database.db_manager import init_db
+from src.data_management.loader import seed_synthetic_data
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -19,6 +21,13 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc"
 )
+
+@app.on_event("startup")
+def startup_event():
+    """Ensure database schema and baseline academic data exist upon server boot."""
+    db_file = str(settings.DB_PATH)
+    init_db(db_file)
+    seed_synthetic_data(db_file, overwrite=False)
 
 # CORS configuration
 app.add_middleware(
