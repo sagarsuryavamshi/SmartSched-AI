@@ -1,26 +1,21 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import {
   Calendar as CalendarIcon,
   Search,
-  Filter,
   Download,
   Users,
   Building2,
   Layers,
   BookOpen,
   Coffee,
-  ShieldCheck,
   CheckCircle2,
-  Clock,
   RotateCcw,
-  ExternalLink,
-  ChevronRight,
   Info,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { Card, CardHeader } from "@/components/ui/Card";
+import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { KpiCard } from "@/components/ui/KpiCard";
@@ -28,6 +23,7 @@ import { Modal } from "@/components/ui/Modal";
 import { useResources } from "@/context/ResourceContext";
 import { ScheduledSession, TimetablePerspective } from "@/types/timetable";
 import { INITIAL_SCHEDULED_SESSIONS } from "@/mock/timetableData";
+import { ApiClient } from "@/services/apiClient";
 import { DayOfWeek } from "@/types";
 
 const DAYS: DayOfWeek[] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
@@ -451,8 +447,47 @@ export default function TimetablePage() {
     }
   };
 
-  // Active Sessions Data (From verified persistent schedule)
-  const [sessions] = useState<ScheduledSession[]>(INITIAL_SCHEDULED_SESSIONS);
+  // Active Sessions Data (Fetched live from backend, fallback to baseline if offline)
+  const [sessions, setSessions] = useState<ScheduledSession[]>(INITIAL_SCHEDULED_SESSIONS);
+  const [isLiveSchedule, setIsLiveSchedule] = useState(false);
+  const [isLoadingSchedule, setIsLoadingSchedule] = useState(true);
+
+  const loadActiveTimetable = useCallback(async () => {
+    setIsLoadingSchedule(true);
+    try {
+      const res = await ApiClient.get<{ sessions: any[] }>("/timetable/active");
+      if (res && Array.isArray(res.sessions)) {
+        const mapped: ScheduledSession[] = res.sessions.map((r: any) => ({
+          assignment_id: r.assignment_id,
+          course_code: r.course_code,
+          course_title: r.course_title,
+          course_category: r.course_category || (r.room_type === "LAB" ? "Practical" : "Theory"),
+          faculty_id: r.faculty_id,
+          faculty_name: r.faculty_name,
+          group_id: r.group_id,
+          group_name: r.group_name,
+          room_id: r.room_id,
+          room_name: r.room_name || r.room_id,
+          room_type: r.room_type || "LECTURE_HALL",
+          slot_id: r.slot_id,
+          day: r.day,
+          start_time: r.start_time,
+          end_time: r.end_time,
+          duration_minutes: r.duration_minutes || 60,
+        }));
+        setSessions(mapped);
+        setIsLiveSchedule(true);
+      }
+    } catch {
+      setIsLiveSchedule(false);
+    } finally {
+      setIsLoadingSchedule(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadActiveTimetable();
+  }, [loadActiveTimetable]);
 
   // Distinct Time Intervals (ordered)
   const distinctTimePeriods = useMemo(() => {
@@ -527,6 +562,20 @@ export default function TimetablePage() {
         description="Interactive weekly timetable schedule matrix supporting Department, Student Cohort, Faculty, and Classroom perspectives."
         actions={
           <div className="flex items-center gap-2">
+            <Badge variant={isLiveSchedule ? "success" : "warning"}>
+              {isLoadingSchedule ? "Syncing..." : isLiveSchedule ? "Live Database" : "Offline Cache"}
+            </Badge>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={loadActiveTimetable}
+              disabled={isLoadingSchedule}
+              className="text-xs text-slate-600"
+              title="Refresh schedule from database"
+            >
+              <RotateCcw className="w-3.5 h-3.5 mr-1" />
+              <span>Refresh</span>
+            </Button>
             <Button
               variant="outline"
               size="sm"

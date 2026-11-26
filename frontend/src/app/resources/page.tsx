@@ -15,7 +15,7 @@ import { TimeslotManagement } from "@/components/resources/TimeslotManagement";
 type ResourceTab = "classrooms" | "faculty" | "groups" | "courses" | "timeslots";
 
 export default function ResourcesPage() {
-  const { classrooms, faculty, studentGroups, courses, timeslots, resetToDefault } = useResources();
+  const { classrooms, faculty, studentGroups, courses, timeslots, refreshResources, syncError, clearSyncError } = useResources();
   const [activeTab, setActiveTab] = useState<ResourceTab>("classrooms");
 
   const tabs = [
@@ -33,12 +33,19 @@ export default function ResourcesPage() {
         title="Academic Resource Management"
         description="Comprehensive administration for classrooms, faculty teaching preferences, student cohorts, syllabus courses, and institutional timeslots."
         actions={
-          <Button variant="outline" size="sm" onClick={resetToDefault} title="Reset session mock data to original baseline">
+          <Button variant="outline" size="sm" onClick={refreshResources} title="Reload live resources from backend database">
             <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
-            <span>Reset Baseline Data</span>
+            <span>Sync from Database</span>
           </Button>
         }
       />
+
+      {syncError && (
+        <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-lg text-xs font-semibold flex items-center justify-between">
+          <span>{syncError}</span>
+          <button onClick={clearSyncError} className="underline text-[11px]">Dismiss</button>
+        </div>
+      )}
 
       {/* Resource Summary KPI Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">

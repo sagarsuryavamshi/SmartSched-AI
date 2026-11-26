@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from typing import Dict, Any, List, Optional
 
 from backend.app.core.config import settings
+from backend.app.api.v1.endpoints.auth import require_admin
 from backend.app.schemas.api_schemas import ReschedulePreviewRequest, RescheduleCommitRequest
 from src.database.timetable_repository import load_saved_timetable
 from src.csp_engine.model import CSPModel
@@ -100,7 +101,7 @@ def preview_reschedule(payload: ReschedulePreviewRequest):
         "message": eval_res.message
     }
 
-@router.post("/commit")
+@router.post("/commit", dependencies=[Depends(require_admin)])
 def commit_reschedule(payload: RescheduleCommitRequest):
     ok, change_id, msg = apply_reschedule_transaction(
         assignment_ids=payload.assignment_ids,
@@ -123,7 +124,7 @@ def commit_reschedule(payload: RescheduleCommitRequest):
 def list_history(limit: int = 50):
     return get_rescheduling_history(limit=limit, db_path=DB_PATH)
 
-@router.post("/rollback/{change_id}")
+@router.post("/rollback/{change_id}", dependencies=[Depends(require_admin)])
 def rollback_change(change_id: str):
     ok, msg = rollback_reschedule_transaction(change_id=change_id, db_path=DB_PATH)
     if not ok:

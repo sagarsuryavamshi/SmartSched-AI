@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from typing import List, Optional, Dict, Any
 
 from backend.app.core.config import settings
+from backend.app.api.v1.endpoints.auth import require_admin
 from backend.app.schemas.api_schemas import (
     ClassroomOut, ClassroomCreate, ClassroomUpdate,
     FacultyOut, FacultyCreate, FacultyUpdate,
@@ -32,7 +33,7 @@ def get_classroom(room_id: str):
         raise HTTPException(status_code=404, detail=f"Classroom '{room_id}' not found")
     return room
 
-@router.post("/classrooms", response_model=Dict[str, Any])
+@router.post("/classrooms", response_model=Dict[str, Any], dependencies=[Depends(require_admin)])
 def add_classroom(payload: ClassroomCreate):
     ok, msg = create_classroom(
         room_id=payload.room_id,
@@ -46,7 +47,7 @@ def add_classroom(payload: ClassroomCreate):
         raise HTTPException(status_code=400, detail=msg)
     return {"status": "success", "message": msg, "room_id": payload.room_id}
 
-@router.put("/classrooms/{room_id}", response_model=Dict[str, Any])
+@router.put("/classrooms/{room_id}", response_model=Dict[str, Any], dependencies=[Depends(require_admin)])
 def edit_classroom(room_id: str, payload: ClassroomUpdate):
     existing = get_classroom_by_id(room_id, db_path=DB_PATH)
     if not existing:
@@ -60,7 +61,7 @@ def edit_classroom(room_id: str, payload: ClassroomUpdate):
         raise HTTPException(status_code=400, detail=msg)
     return {"status": "success", "message": msg, "room_id": room_id}
 
-@router.delete("/classrooms/{room_id}")
+@router.delete("/classrooms/{room_id}", dependencies=[Depends(require_admin)])
 def remove_classroom(room_id: str):
     ok, msg = delete_classroom(room_id, db_path=DB_PATH)
     if not ok:
@@ -79,7 +80,7 @@ def get_faculty(faculty_id: str):
         raise HTTPException(status_code=404, detail=f"Faculty '{faculty_id}' not found")
     return fac
 
-@router.post("/faculty", response_model=Dict[str, Any])
+@router.post("/faculty", response_model=Dict[str, Any], dependencies=[Depends(require_admin)])
 def add_faculty(payload: FacultyCreate):
     ok, msg = create_faculty(
         faculty_id=payload.faculty_id,
@@ -96,7 +97,7 @@ def add_faculty(payload: FacultyCreate):
         raise HTTPException(status_code=400, detail=msg)
     return {"status": "success", "message": msg, "faculty_id": payload.faculty_id}
 
-@router.put("/faculty/{faculty_id}", response_model=Dict[str, Any])
+@router.put("/faculty/{faculty_id}", response_model=Dict[str, Any], dependencies=[Depends(require_admin)])
 def edit_faculty(faculty_id: str, payload: FacultyUpdate):
     existing = get_faculty_by_id(faculty_id, db_path=DB_PATH)
     if not existing:
@@ -118,7 +119,7 @@ def edit_faculty(faculty_id: str, payload: FacultyUpdate):
         raise HTTPException(status_code=400, detail=msg)
     return {"status": "success", "message": msg, "faculty_id": faculty_id}
 
-@router.delete("/faculty/{faculty_id}")
+@router.delete("/faculty/{faculty_id}", dependencies=[Depends(require_admin)])
 def remove_faculty(faculty_id: str):
     ok, msg = delete_faculty(faculty_id, db_path=DB_PATH)
     if not ok:
@@ -137,7 +138,7 @@ def get_group(group_id: str):
         raise HTTPException(status_code=404, detail=f"Student group '{group_id}' not found")
     return grp
 
-@router.post("/groups", response_model=Dict[str, Any])
+@router.post("/groups", response_model=Dict[str, Any], dependencies=[Depends(require_admin)])
 def add_group(payload: StudentGroupCreate):
     ok, msg = create_student_group(
         group_id=payload.group_id,
@@ -152,7 +153,7 @@ def add_group(payload: StudentGroupCreate):
         raise HTTPException(status_code=400, detail=msg)
     return {"status": "success", "message": msg, "group_id": payload.group_id}
 
-@router.put("/groups/{group_id}", response_model=Dict[str, Any])
+@router.put("/groups/{group_id}", response_model=Dict[str, Any], dependencies=[Depends(require_admin)])
 def edit_group(group_id: str, payload: StudentGroupUpdate):
     existing = get_student_group_by_id(group_id, db_path=DB_PATH)
     if not existing:
@@ -171,7 +172,7 @@ def edit_group(group_id: str, payload: StudentGroupUpdate):
         raise HTTPException(status_code=400, detail=msg)
     return {"status": "success", "message": msg, "group_id": group_id}
 
-@router.delete("/groups/{group_id}")
+@router.delete("/groups/{group_id}", dependencies=[Depends(require_admin)])
 def remove_group(group_id: str):
     ok, msg = delete_student_group(group_id, db_path=DB_PATH)
     if not ok:
@@ -190,7 +191,7 @@ def get_course(course_id: str):
         raise HTTPException(status_code=404, detail=f"Course '{course_id}' not found")
     return crs
 
-@router.post("/courses", response_model=Dict[str, Any])
+@router.post("/courses", response_model=Dict[str, Any], dependencies=[Depends(require_admin)])
 def add_course(payload: CourseCreate):
     ok, msg = create_course(
         course_id=payload.course_id,
@@ -208,7 +209,7 @@ def add_course(payload: CourseCreate):
         raise HTTPException(status_code=400, detail=msg)
     return {"status": "success", "message": msg, "course_id": payload.course_id}
 
-@router.put("/courses/{course_id}", response_model=Dict[str, Any])
+@router.put("/courses/{course_id}", response_model=Dict[str, Any], dependencies=[Depends(require_admin)])
 def edit_course(course_id: str, payload: CourseUpdate):
     existing = get_course_by_id(course_id, db_path=DB_PATH)
     if not existing:
@@ -231,7 +232,7 @@ def edit_course(course_id: str, payload: CourseUpdate):
         raise HTTPException(status_code=400, detail=msg)
     return {"status": "success", "message": msg, "course_id": course_id}
 
-@router.delete("/courses/{course_id}")
+@router.delete("/courses/{course_id}", dependencies=[Depends(require_admin)])
 def remove_course(course_id: str):
     ok, msg = delete_course(course_id, db_path=DB_PATH)
     if not ok:
@@ -250,7 +251,7 @@ def get_timeslot(slot_id: str):
         raise HTTPException(status_code=404, detail=f"Timeslot '{slot_id}' not found")
     return slot
 
-@router.post("/timeslots", response_model=Dict[str, Any])
+@router.post("/timeslots", response_model=Dict[str, Any], dependencies=[Depends(require_admin)])
 def add_timeslot(payload: TimeslotCreate):
     ok, msg = create_timeslot(
         slot_id=payload.slot_id,
@@ -265,7 +266,7 @@ def add_timeslot(payload: TimeslotCreate):
         raise HTTPException(status_code=400, detail=msg)
     return {"status": "success", "message": msg, "slot_id": payload.slot_id}
 
-@router.put("/timeslots/{slot_id}", response_model=Dict[str, Any])
+@router.put("/timeslots/{slot_id}", response_model=Dict[str, Any], dependencies=[Depends(require_admin)])
 def edit_timeslot(slot_id: str, payload: TimeslotUpdate):
     existing = get_timeslot_by_id(slot_id, db_path=DB_PATH)
     if not existing:
@@ -284,7 +285,7 @@ def edit_timeslot(slot_id: str, payload: TimeslotUpdate):
         raise HTTPException(status_code=400, detail=msg)
     return {"status": "success", "message": msg, "slot_id": slot_id}
 
-@router.delete("/timeslots/{slot_id}")
+@router.delete("/timeslots/{slot_id}", dependencies=[Depends(require_admin)])
 def remove_timeslot(slot_id: str):
     ok, msg = delete_timeslot(slot_id, db_path=DB_PATH)
     if not ok:

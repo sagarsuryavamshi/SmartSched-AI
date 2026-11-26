@@ -51,17 +51,21 @@ class PasswordChangePayload(BaseModel):
     old_password: str
     new_password: str
 
-# Dependency for current active user
-async def get_current_user(token: Optional[str] = Depends(oauth2_scheme)) -> User:
+# Dependency for current active user (supports Bearer header or HttpOnly cookie)
+async def get_current_user(
+    request: Request,
+    token: Optional[str] = Depends(oauth2_scheme),
+) -> User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials or session expired",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    if not token:
+    resolved_token = token or request.cookies.get("smartsched_auth_token")
+    if not resolved_token:
         raise credentials_exception
 
-    token_data = decode_access_token(token)
+    token_data = decode_access_token(resolved_token)
     if token_data is None:
         raise credentials_exception
 
@@ -102,12 +106,14 @@ def login(payload: LoginPayload, response: Response):
     )
 
     # Set secure HttpOnly cookie for cookie-based browser architectures
+    from backend.app.core.config import settings
+    is_prod = settings.ENVIRONMENT == "production"
     response.set_cookie(
         key="smartsched_auth_token",
         value=access_token,
         httponly=True,
-        samesite="lax",
-        secure=False  # True in HTTPS production
+        samesite="none" if is_prod else "lax",
+        secure=is_prod,
     )
 
     return {

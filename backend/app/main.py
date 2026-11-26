@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 
@@ -24,7 +25,9 @@ app = FastAPI(
 
 @app.on_event("startup")
 def startup_event():
-    """Ensure database schema and baseline academic data exist upon server boot."""
+    """Ensure local SQLite database schema and baseline data exist when not using external PostgreSQL."""
+    if os.getenv("DATABASE_URL", "").startswith("postgresql"):
+        return
     db_file = str(settings.DB_PATH)
     init_db(db_file)
     seed_synthetic_data(db_file, overwrite=False)

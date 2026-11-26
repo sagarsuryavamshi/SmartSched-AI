@@ -13,6 +13,10 @@ class TestFastAPIEndpoints(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.client = TestClient(app)
+        r_admin = cls.client.post("/api/v1/auth/login", json={"username": "admin", "password": "Admin@SmartSched2026"})
+        cls.admin_headers = {"Authorization": f"Bearer {r_admin.json()['access_token']}"}
+        r_viewer = cls.client.post("/api/v1/auth/login", json={"username": "viewer", "password": "Viewer@SmartSched2026"})
+        cls.viewer_headers = {"Authorization": f"Bearer {r_viewer.json()['access_token']}"}
 
     def test_01_health_check(self):
         response = self.client.get("/api/v1/health")
@@ -79,7 +83,14 @@ class TestFastAPIEndpoints(unittest.TestCase):
             "use_ac3_preprocess": True,
             "timeout_seconds": 10.0
         }
-        response = self.client.post("/api/v1/optimize/csp/solve-backtracking?async_mode=false", json=payload)
+        # Unauthenticated & viewer should be rejected
+        anon_client = TestClient(app)
+        unauth_res = anon_client.post("/api/v1/optimize/csp/solve-backtracking?async_mode=false", json=payload)
+        self.assertEqual(unauth_res.status_code, 401)
+        viewer_res = self.client.post("/api/v1/optimize/csp/solve-backtracking?async_mode=false", json=payload, headers=self.viewer_headers)
+        self.assertEqual(viewer_res.status_code, 403)
+
+        response = self.client.post("/api/v1/optimize/csp/solve-backtracking?async_mode=false", json=payload, headers=self.admin_headers)
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertTrue(data["success"])

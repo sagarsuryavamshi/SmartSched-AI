@@ -1,9 +1,10 @@
 """Database connection, schema migration, and transaction management for SmartSched AI."""
 
 import os
+import re
 import sqlite3
 from contextlib import contextmanager
-from typing import Generator
+from typing import Any, Generator, Optional
 from src.utils.logger import setup_logger
 
 logger = setup_logger("smartsched.database")
@@ -15,9 +16,104 @@ DEFAULT_DB_PATH = os.path.join(
 )
 
 
+def is_postgres_active(db_path: str = DEFAULT_DB_PATH) -> bool:
+    """Returns True when DATABASE_URL is PostgreSQL and caller targets the default production DB."""
+    database_url = os.getenv("DATABASE_URL", "")
+    if not database_url.startswith("postgresql"):
+        return False
+    return os.path.abspath(db_path) == os.path.abspath(DEFAULT_DB_PATH)
+
+
+def _translate_sql_for_pg(sql: str) -> str:
+    """Translates SQLite '?' parameter placeholders to PostgreSQL '%s' outside string literals."""
+    out = []
+    in_single = False
+    i = 0
+    while i < len(sql):
+        ch = sql[i]
+        if ch == "'" and (i == 0 or sql[i - 1] != "\\"):
+            in_single = not in_single
+            out.append(ch)
+        elif ch == "?" and not in_single:
+            out.append("%s")
+        else:
+            out.append(ch)
+        i += 1
+    translated = "".join(out)
+    # Handle SQLite INSERT OR REPLACE INTO scheduled_assignments when saving
+    if "INSERT OR REPLACE INTO scheduled_assignments" in translated:
+        translated = translated.replace("INSERT OR REPLACE INTO scheduled_assignments", "INSERT INTO scheduled_assignments")
+    return translated
+
+
+class _PgCursorWrapper:
+    """Wraps a psycopg2 RealDictCursor so SQLite-style '?' queries work transparently."""
+
+    def __init__(self, cursor: Any):
+        self._cursor = cursor
+
+    def execute(self, sql: str, params: Optional[Any] = None) -> Any:
+        pg_sql = _translate_sql_for_pg(sql)
+        if params is not None:
+            return self._cursor.execute(pg_sql, params)
+        return self._cursor.execute(pg_sql)
+
+    def executemany(self, sql: str, seq_of_params: Any) -> Any:
+        pg_sql = _translate_sql_for_pg(sql)
+        return self._cursor.executemany(pg_sql, seq_of_params)
+
+    def fetchone(self) -> Any:
+        return self._cursor.fetchone()
+
+    def fetchall(self) -> Any:
+        return self._cursor.fetchall()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._cursor, name)
+
+
+class _PgConnectionWrapper:
+    """Wraps a psycopg2 connection so it supports SQLite-style cursor() and pandas read_sql_query."""
+
+    def __init__(self, conn: Any):
+        self._conn = conn
+
+    def cursor(self) -> _PgCursorWrapper:
+        from psycopg2.extras import RealDictCursor
+        return _PgCursorWrapper(self._conn.cursor(cursor_factory=RealDictCursor))
+
+    def commit(self) -> None:
+        self._conn.commit()
+
+    def rollback(self) -> None:
+        self._conn.rollback()
+
+    def close(self) -> None:
+        self._conn.close()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._conn, name)
+
+
 @contextmanager
-def get_db_connection(db_path: str = DEFAULT_DB_PATH) -> Generator[sqlite3.Connection, None, None]:
-    """Yields a SQLite connection with row factory and foreign key enforcement enabled."""
+def get_db_connection(db_path: str = DEFAULT_DB_PATH) -> Generator[Any, None, None]:
+    """Yields a PostgreSQL connection (when DATABASE_URL is configured for default DB) or SQLite connection."""
+    if is_postgres_active(db_path):
+        import psycopg2
+        database_url = os.getenv("DATABASE_URL", "")
+        raw_conn = psycopg2.connect(database_url)
+        conn = _PgConnectionWrapper(raw_conn)
+        try:
+            yield conn
+            conn.commit()
+        except Exception as exc:
+            conn.rollback()
+            logger.error("PostgreSQL transaction rolled back due to error: %s", exc)
+            raise
+        finally:
+            conn.close()
+        return
+
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row

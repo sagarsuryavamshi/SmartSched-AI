@@ -18,6 +18,9 @@ interface ResourceContextType {
   courses: Course[];
   timeslots: Timeslot[];
   isLiveBackend: boolean;
+  syncError: string | null;
+  clearSyncError: () => void;
+  refreshResources: () => Promise<void>;
 
   // Classroom CRUD
   addClassroom: (room: Classroom) => boolean;
@@ -60,80 +63,91 @@ export function ResourceProvider({ children }: { children: React.ReactNode }) {
   const [courses, setCourses] = useState<Course[]>(INITIAL_COURSES);
   const [timeslots, setTimeslots] = useState<Timeslot[]>(INITIAL_TIMESLOTS);
   const [isLiveBackend, setIsLiveBackend] = useState<boolean>(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+
+  const clearSyncError = () => setSyncError(null);
+
+  const fetchLiveResources = async () => {
+    try {
+      const [rooms, fac, groups, crs, slots] = await Promise.all([
+        ApiClient.get<Classroom[]>("/resources/classrooms"),
+        ApiClient.get<any[]>("/resources/faculty"),
+        ApiClient.get<StudentGroup[]>("/resources/groups"),
+        ApiClient.get<Course[]>("/resources/courses"),
+        ApiClient.get<Timeslot[]>("/resources/timeslots"),
+      ]);
+
+      if (rooms) setClassrooms(rooms);
+      if (fac) {
+        const normalizedFac: Faculty[] = fac.map((f: any) => ({
+          faculty_id: f.faculty_id,
+          name: f.name,
+          email: f.email,
+          department: f.department,
+          max_weekly_hours: f.max_weekly_hours,
+          available_days: f.available_days_list || (typeof f.available_days === "string" ? JSON.parse(f.available_days) : f.available_days) || [],
+          qualified_courses: f.qualified_courses_list || (typeof f.qualified_courses === "string" ? JSON.parse(f.qualified_courses) : f.qualified_courses) || [],
+          unavailable_slots: f.unavailable_slots_list || (typeof f.unavailable_slots === "string" ? JSON.parse(f.unavailable_slots) : f.unavailable_slots) || [],
+        }));
+        setFaculty(normalizedFac);
+      }
+      if (groups) setStudentGroups(groups);
+      if (crs) setCourses(crs);
+      if (slots) setTimeslots(slots);
+
+      setIsLiveBackend(true);
+    } catch (e) {
+      console.warn("Could not connect to FastAPI backend, falling back to cached state:", e);
+      setIsLiveBackend(false);
+    }
+  };
 
   // Fetch live resources directly from FastAPI backend on mount
   useEffect(() => {
-    async function fetchLiveResources() {
-      try {
-        const [rooms, fac, groups, crs, slots] = await Promise.all([
-          ApiClient.get<Classroom[]>("/resources/classrooms"),
-          ApiClient.get<any[]>("/resources/faculty"),
-          ApiClient.get<StudentGroup[]>("/resources/groups"),
-          ApiClient.get<Course[]>("/resources/courses"),
-          ApiClient.get<Timeslot[]>("/resources/timeslots"),
-        ]);
-
-        if (rooms && rooms.length > 0) setClassrooms(rooms);
-        if (fac && fac.length > 0) {
-          // Normalize faculty fields
-          const normalizedFac: Faculty[] = fac.map((f: any) => ({
-            faculty_id: f.faculty_id,
-            name: f.name,
-            email: f.email,
-            department: f.department,
-            max_weekly_hours: f.max_weekly_hours,
-            available_days: f.available_days_list || (typeof f.available_days === "string" ? JSON.parse(f.available_days) : f.available_days) || [],
-            qualified_courses: f.qualified_courses_list || (typeof f.qualified_courses === "string" ? JSON.parse(f.qualified_courses) : f.qualified_courses) || [],
-            unavailable_slots: f.unavailable_slots_list || (typeof f.unavailable_slots === "string" ? JSON.parse(f.unavailable_slots) : f.unavailable_slots) || [],
-          }));
-          setFaculty(normalizedFac);
-        }
-        if (groups && groups.length > 0) setStudentGroups(groups);
-        if (crs && crs.length > 0) setCourses(crs);
-        if (slots && slots.length > 0) setTimeslots(slots);
-
-        setIsLiveBackend(true);
-      } catch (e) {
-        console.warn("Could not connect to FastAPI backend, falling back to cached state:", e);
-        setIsLiveBackend(false);
-      }
-    }
-
     fetchLiveResources();
   }, []);
+
+  const handleSyncFailure = (err: any) => {
+    setSyncError(err?.message || "Failed to persist resource change to backend.");
+    fetchLiveResources();
+  };
 
   // Classroom CRUD
   const addClassroom = (room: Classroom) => {
     if (classrooms.some((r) => r.room_id === room.room_id)) return false;
+    setSyncError(null);
     setClassrooms((prev) => [...prev, room]);
-    // Asynchronously sync to backend
-    ApiClient.post("/resources/classrooms", room).catch((e) => console.error("Sync error:", e));
+    ApiClient.post("/resources/classrooms", room).catch(handleSyncFailure);
     return true;
   };
 
   const updateClassroom = (room: Classroom) => {
+    setSyncError(null);
     setClassrooms((prev) => prev.map((r) => (r.room_id === room.room_id ? room : r)));
-    ApiClient.put(`/resources/classrooms/${room.room_id}`, room).catch((e) => console.error("Sync error:", e));
+    ApiClient.put(`/resources/classrooms/${room.room_id}`, room).catch(handleSyncFailure);
     return true;
   };
 
   const deleteClassroom = (roomId: string) => {
+    setSyncError(null);
     setClassrooms((prev) => prev.filter((r) => r.room_id !== roomId));
-    ApiClient.delete(`/resources/classrooms/${roomId}`).catch((e) => console.error("Sync error:", e));
+    ApiClient.delete(`/resources/classrooms/${roomId}`).catch(handleSyncFailure);
     return { success: true };
   };
 
   // Faculty CRUD & Availability
   const addFaculty = (f: Faculty) => {
     if (faculty.some((item) => item.faculty_id === f.faculty_id)) return false;
+    setSyncError(null);
     setFaculty((prev) => [...prev, f]);
-    ApiClient.post("/resources/faculty", f).catch((e) => console.error("Sync error:", e));
+    ApiClient.post("/resources/faculty", f).catch(handleSyncFailure);
     return true;
   };
 
   const updateFaculty = (f: Faculty) => {
+    setSyncError(null);
     setFaculty((prev) => prev.map((item) => (item.faculty_id === f.faculty_id ? f : item)));
-    ApiClient.put(`/resources/faculty/${f.faculty_id}`, f).catch((e) => console.error("Sync error:", e));
+    ApiClient.put(`/resources/faculty/${f.faculty_id}`, f).catch(handleSyncFailure);
     return true;
   };
 
@@ -145,12 +159,14 @@ export function ResourceProvider({ children }: { children: React.ReactNode }) {
         message: `Cannot delete faculty '${facultyId}': assigned to active academic courses. Reassign courses first.`,
       };
     }
+    setSyncError(null);
     setFaculty((prev) => prev.filter((item) => item.faculty_id !== facultyId));
-    ApiClient.delete(`/resources/faculty/${facultyId}`).catch((e) => console.error("Sync error:", e));
+    ApiClient.delete(`/resources/faculty/${facultyId}`).catch(handleSyncFailure);
     return { success: true };
   };
 
   const toggleFacultySlotAvailability = (facultyId: string, slotId: string) => {
+    setSyncError(null);
     setFaculty((prev) =>
       prev.map((f) => {
         if (f.faculty_id !== facultyId) return f;
@@ -160,7 +176,7 @@ export function ResourceProvider({ children }: { children: React.ReactNode }) {
           ? currentUnavail.filter((s) => s !== slotId)
           : [...currentUnavail, slotId];
         
-        ApiClient.put(`/resources/faculty/${facultyId}`, { unavailable_slots: updated }).catch((e) => console.error(e));
+        ApiClient.put(`/resources/faculty/${facultyId}`, { unavailable_slots: updated }).catch(handleSyncFailure);
 
         return {
           ...f,
@@ -190,14 +206,16 @@ export function ResourceProvider({ children }: { children: React.ReactNode }) {
   // Student Group CRUD
   const addStudentGroup = (g: StudentGroup) => {
     if (studentGroups.some((item) => item.group_id === g.group_id)) return false;
+    setSyncError(null);
     setStudentGroups((prev) => [...prev, g]);
-    ApiClient.post("/resources/groups", g).catch((e) => console.error("Sync error:", e));
+    ApiClient.post("/resources/groups", g).catch(handleSyncFailure);
     return true;
   };
 
   const updateStudentGroup = (g: StudentGroup) => {
+    setSyncError(null);
     setStudentGroups((prev) => prev.map((item) => (item.group_id === g.group_id ? g : item)));
-    ApiClient.put(`/resources/groups/${g.group_id}`, g).catch((e) => console.error("Sync error:", e));
+    ApiClient.put(`/resources/groups/${g.group_id}`, g).catch(handleSyncFailure);
     return true;
   };
 
@@ -209,28 +227,32 @@ export function ResourceProvider({ children }: { children: React.ReactNode }) {
         message: `Cannot delete student group '${groupId}': active courses are scheduled for this group.`,
       };
     }
+    setSyncError(null);
     setStudentGroups((prev) => prev.filter((item) => item.group_id !== groupId));
-    ApiClient.delete(`/resources/groups/${groupId}`).catch((e) => console.error("Sync error:", e));
+    ApiClient.delete(`/resources/groups/${groupId}`).catch(handleSyncFailure);
     return { success: true };
   };
 
   // Course CRUD
   const addCourse = (c: Course) => {
     if (courses.some((item) => item.course_id === c.course_id || item.code === c.code)) return false;
+    setSyncError(null);
     setCourses((prev) => [...prev, c]);
-    ApiClient.post("/resources/courses", c).catch((e) => console.error("Sync error:", e));
+    ApiClient.post("/resources/courses", c).catch(handleSyncFailure);
     return true;
   };
 
   const updateCourse = (c: Course) => {
+    setSyncError(null);
     setCourses((prev) => prev.map((item) => (item.course_id === c.course_id ? c : item)));
-    ApiClient.put(`/resources/courses/${c.course_id}`, c).catch((e) => console.error("Sync error:", e));
+    ApiClient.put(`/resources/courses/${c.course_id}`, c).catch(handleSyncFailure);
     return true;
   };
 
   const deleteCourse = (courseId: string) => {
+    setSyncError(null);
     setCourses((prev) => prev.filter((item) => item.course_id !== courseId));
-    ApiClient.delete(`/resources/courses/${courseId}`).catch((e) => console.error("Sync error:", e));
+    ApiClient.delete(`/resources/courses/${courseId}`).catch(handleSyncFailure);
     return { success: true };
   };
 
@@ -239,29 +261,33 @@ export function ResourceProvider({ children }: { children: React.ReactNode }) {
     if (timeslots.some((item) => item.slot_id === ts.slot_id)) {
       return { success: false, message: `Timeslot '${ts.slot_id}' already exists.` };
     }
+    setSyncError(null);
     setTimeslots((prev) => [...prev, ts]);
-    ApiClient.post("/resources/timeslots", ts).catch((e) => console.error("Sync error:", e));
+    ApiClient.post("/resources/timeslots", ts).catch(handleSyncFailure);
     return { success: true };
   };
 
   const updateTimeslot = (ts: Timeslot) => {
+    setSyncError(null);
     setTimeslots((prev) => prev.map((item) => (item.slot_id === ts.slot_id ? ts : item)));
-    ApiClient.put(`/resources/timeslots/${ts.slot_id}`, ts).catch((e) => console.error("Sync error:", e));
+    ApiClient.put(`/resources/timeslots/${ts.slot_id}`, ts).catch(handleSyncFailure);
     return { success: true };
   };
 
   const deleteTimeslot = (slotId: string) => {
+    setSyncError(null);
     setTimeslots((prev) => prev.filter((item) => item.slot_id !== slotId));
-    ApiClient.delete(`/resources/timeslots/${slotId}`).catch((e) => console.error("Sync error:", e));
+    ApiClient.delete(`/resources/timeslots/${slotId}`).catch(handleSyncFailure);
     return { success: true };
   };
 
   const toggleTimeslotBreak = (slotId: string) => {
+    setSyncError(null);
     setTimeslots((prev) =>
       prev.map((ts) => {
         if (ts.slot_id !== slotId) return ts;
         const newBreak = !ts.is_break;
-        ApiClient.put(`/resources/timeslots/${slotId}`, { is_break: newBreak }).catch((e) => console.error(e));
+        ApiClient.put(`/resources/timeslots/${slotId}`, { is_break: newBreak }).catch(handleSyncFailure);
         return {
           ...ts,
           is_break: newBreak,
@@ -287,6 +313,9 @@ export function ResourceProvider({ children }: { children: React.ReactNode }) {
         courses,
         timeslots,
         isLiveBackend,
+        syncError,
+        clearSyncError,
+        refreshResources: fetchLiveResources,
         addClassroom,
         updateClassroom,
         deleteClassroom,

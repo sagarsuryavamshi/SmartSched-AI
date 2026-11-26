@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
 from typing import Dict, Any, Optional
 import uuid
 import time
 
 from backend.app.core.config import settings
+from backend.app.api.v1.endpoints.auth import require_admin
 from backend.app.schemas.api_schemas import CSPSolverRequest, GASolverRequest, BenchmarkRequest
 from src.csp_engine.model import CSPModel
 from src.csp_engine.solver import CSPSolver
@@ -141,7 +142,7 @@ def execute_benchmark_job(job_id: str, config: BenchmarkRequest):
         JOBS[job_id]["completed_at"] = time.time()
         JOBS[job_id]["error"] = str(e)
 
-@router.post("/csp/solve-backtracking")
+@router.post("/csp/solve-backtracking", dependencies=[Depends(require_admin)])
 def solve_csp(payload: CSPSolverRequest, background_tasks: BackgroundTasks, async_mode: bool = False):
     if not async_mode:
         model = CSPModel.build_from_db(DB_PATH)
@@ -184,7 +185,7 @@ def solve_csp(payload: CSPSolverRequest, background_tasks: BackgroundTasks, asyn
     background_tasks.add_task(execute_csp_job, job_id, payload)
     return {"job_id": job_id, "status": "queued", "message": "CSP optimization job dispatched"}
 
-@router.post("/ga/solve")
+@router.post("/ga/solve", dependencies=[Depends(require_admin)])
 def solve_ga(payload: GASolverRequest, background_tasks: BackgroundTasks, async_mode: bool = False):
     if not async_mode:
         model = CSPModel.build_from_db(DB_PATH)
@@ -227,7 +228,7 @@ def solve_ga(payload: GASolverRequest, background_tasks: BackgroundTasks, async_
     background_tasks.add_task(execute_ga_job, job_id, payload)
     return {"job_id": job_id, "status": "queued", "message": "Genetic Algorithm optimization job dispatched"}
 
-@router.post("/benchmark")
+@router.post("/benchmark", dependencies=[Depends(require_admin)])
 def run_benchmark(payload: BenchmarkRequest, background_tasks: BackgroundTasks, async_mode: bool = False):
     if not async_mode:
         model = CSPModel.build_from_db(DB_PATH)

@@ -32,6 +32,7 @@ import { Badge } from "@/components/ui/Badge";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { GAHyperparameters, GAResultPayload } from "@/types/solver";
 import { FIXTURE_GA_RESULT } from "@/types/fixtures";
+import { ApiClient } from "@/services/apiClient";
 
 export default function GeneticPage() {
   const [params, setParams] = useState<GAHyperparameters>({
@@ -57,6 +58,43 @@ export default function GeneticPage() {
 
   const [activeResult, setActiveResult] = useState<GAResultPayload | null>(null);
   const [isFixtureMode, setIsFixtureMode] = useState(false);
+  const [isRunning, setIsRunning] = useState(false);
+  const [runError, setRunError] = useState<string | null>(null);
+
+  const handleRunGASolver = async () => {
+    setIsRunning(true);
+    setRunError(null);
+    setIsFixtureMode(false);
+    try {
+      const res = await ApiClient.post<any>("/optimize/ga/solve?async_mode=false", {
+        population_size: params.population_size,
+        max_generations: params.max_generations,
+        crossover_prob: params.crossover_prob,
+        mutation_prob: params.mutation_prob,
+        elitism_count: params.elitism_count,
+        tournament_size: params.tournament_size,
+        timeout_seconds: params.timeout_seconds,
+      });
+      setActiveResult({
+        ...FIXTURE_GA_RESULT,
+        status: res.success ? "FEASIBLE" : "CONVERGED_WITH_VIOLATIONS",
+        is_solution_found: Boolean(res.success),
+        generations_completed: res.generations_completed ?? params.max_generations,
+        fitness_evaluations: res.fitness_evaluations ?? 0,
+        execution_time_seconds: res.execution_time_seconds ?? 0,
+        best_hard_violations: res.hard_violations ?? 0,
+        best_soft_penalty: res.soft_penalty ?? 0,
+        message: res.success
+          ? `Genetic Algorithm completed in ${res.execution_time_seconds}s (Run ID: ${res.run_id || "N/A"}).`
+          : "Genetic Algorithm completed without finding a 0-violation solution.",
+        config_used: params,
+      });
+    } catch (err: any) {
+      setRunError(err.message || "Failed to execute Genetic Algorithm.");
+    } finally {
+      setIsRunning(false);
+    }
+  };
 
   const handleLoadFixture = () => {
     setActiveResult(FIXTURE_GA_RESULT);
@@ -249,28 +287,23 @@ export default function GeneticPage() {
           <Card className="p-6 space-y-4">
             <CardHeader
               title="GA Optimizer Dispatcher"
-              description="Genetic solver execution panel."
+              description="Live Genetic Algorithm execution panel."
             />
 
-            <div className="p-4 rounded-xl border border-amber-200 bg-amber-50/70 text-amber-900 space-y-2 text-xs">
-              <div className="flex items-center gap-2 font-bold">
-                <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
-                <span>Backend Dispatch Pending</span>
+            {runError && (
+              <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-red-800 text-xs font-medium">
+                {runError}
               </div>
-              <p className="text-[11px] text-amber-800 leading-relaxed">
-                Connects to FastAPI via <code>POST /api/v1/optimize/ga/solve</code>.
-                In this frontend stage, live solver execution is reserved for the upcoming FastAPI integration.
-              </p>
-            </div>
+            )}
 
             <Button
               variant="primary"
-              disabled={true}
-              className="w-full text-xs py-2.5 opacity-60 cursor-not-allowed bg-accent-purple"
-              title="Awaiting FastAPI backend integration"
+              disabled={isRunning}
+              onClick={handleRunGASolver}
+              className="w-full text-xs py-2.5 bg-accent-purple hover:bg-purple-700"
             >
               <Play className="w-4 h-4 mr-1.5" />
-              <span>Evolve Timetable (Awaiting Backend)</span>
+              <span>{isRunning ? "Evolving Timetable..." : "Evolve Timetable with GA"}</span>
             </Button>
           </Card>
         </div>

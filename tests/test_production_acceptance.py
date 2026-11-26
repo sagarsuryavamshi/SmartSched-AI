@@ -28,6 +28,10 @@ class TestProductionAcceptance(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.client = TestClient(app)
+        r_admin = cls.client.post("/api/v1/auth/login", json={"username": "admin", "password": "Admin@SmartSched2026"})
+        cls.admin_headers = {"Authorization": f"Bearer {r_admin.json()['access_token']}"}
+        r_viewer = cls.client.post("/api/v1/auth/login", json={"username": "viewer", "password": "Viewer@SmartSched2026"})
+        cls.viewer_headers = {"Authorization": f"Bearer {r_viewer.json()['access_token']}"}
 
     # Workflow 1: Authentication
     def test_workflow_01_authentication(self):
@@ -66,16 +70,21 @@ class TestProductionAcceptance(unittest.TestCase):
             "room_type": "LAB",
             "features": "GPU Cluster"
         }
+        # Unauthenticated & viewer rejected on mutations
+        anon_client = TestClient(app)
+        self.assertEqual(anon_client.post("/api/v1/resources/classrooms", json=test_room).status_code, 401)
+        self.assertEqual(self.client.post("/api/v1/resources/classrooms", json=test_room, headers=self.viewer_headers).status_code, 403)
+
         # Create
-        r_create = self.client.post("/api/v1/resources/classrooms", json=test_room)
+        r_create = self.client.post("/api/v1/resources/classrooms", json=test_room, headers=self.admin_headers)
         self.assertEqual(r_create.status_code, 200)
 
         # Update
-        r_update = self.client.put(f"/api/v1/resources/classrooms/{unique_id}", json={"capacity": 50})
+        r_update = self.client.put(f"/api/v1/resources/classrooms/{unique_id}", json={"capacity": 50}, headers=self.admin_headers)
         self.assertEqual(r_update.status_code, 200)
 
         # Delete
-        r_delete = self.client.delete(f"/api/v1/resources/classrooms/{unique_id}")
+        r_delete = self.client.delete(f"/api/v1/resources/classrooms/{unique_id}", headers=self.admin_headers)
         self.assertEqual(r_delete.status_code, 200)
 
     # Workflow 3: CSP Solver
@@ -88,7 +97,7 @@ class TestProductionAcceptance(unittest.TestCase):
             "use_ac3_preprocess": True,
             "timeout_seconds": 15.0
         }
-        res = self.client.post("/api/v1/optimize/csp/solve-backtracking?async_mode=false", json=payload)
+        res = self.client.post("/api/v1/optimize/csp/solve-backtracking?async_mode=false", json=payload, headers=self.admin_headers)
         self.assertEqual(res.status_code, 200)
         data = res.json()
         self.assertTrue(data["success"])
@@ -106,7 +115,7 @@ class TestProductionAcceptance(unittest.TestCase):
             "tournament_size": 3,
             "timeout_seconds": 10.0
         }
-        res = self.client.post("/api/v1/optimize/ga/solve?async_mode=false", json=payload)
+        res = self.client.post("/api/v1/optimize/ga/solve?async_mode=false", json=payload, headers=self.admin_headers)
         self.assertEqual(res.status_code, 200)
         data = res.json()
         self.assertIn("success", data)
@@ -119,7 +128,7 @@ class TestProductionAcceptance(unittest.TestCase):
             "ga_generations": 10,
             "ga_timeout": 5.0
         }
-        res = self.client.post("/api/v1/optimize/benchmark?async_mode=false", json=payload)
+        res = self.client.post("/api/v1/optimize/benchmark?async_mode=false", json=payload, headers=self.admin_headers)
         self.assertEqual(res.status_code, 200)
         data = res.json()
         self.assertIn("comparison_table", data)

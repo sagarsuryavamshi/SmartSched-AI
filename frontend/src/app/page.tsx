@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Building2,
@@ -21,14 +21,53 @@ import { KpiCard } from "@/components/ui/KpiCard";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { useResources } from "@/context/ResourceContext";
+import { ApiClient } from "@/services/apiClient";
 import {
   MOCK_SYSTEM_SUMMARY,
-  MOCK_COURSES,
   MOCK_ROOM_UTILIZATION,
 } from "@/mock/data";
 
 export default function DashboardPage() {
-  const summary = MOCK_SYSTEM_SUMMARY;
+  const { classrooms, faculty, courses, timeslots, studentGroups, isLiveBackend } = useResources();
+  const [activeRunId, setActiveRunId] = useState<string>(MOCK_SYSTEM_SUMMARY.active_run_id);
+  const [softPenalty, setSoftPenalty] = useState<number>(MOCK_SYSTEM_SUMMARY.soft_penalty_score);
+  const [totalSessions, setTotalSessions] = useState<number | null>(null);
+  const [roomUtilization, setRoomUtilization] = useState(MOCK_ROOM_UTILIZATION);
+
+  useEffect(() => {
+    async function loadDashboardLive() {
+      try {
+        const [ttRes, anRes] = await Promise.all([
+          ApiClient.get<{ run_id?: string; total_sessions?: number }>("/timetable/active"),
+          ApiClient.get<{ run_id?: string; analytics?: any }>("/analytics/summary"),
+        ]);
+        if (ttRes?.run_id) setActiveRunId(ttRes.run_id);
+        if (typeof ttRes?.total_sessions === "number") setTotalSessions(ttRes.total_sessions);
+        const analytics = anRes?.analytics;
+        if (analytics?.soft_penalties?.total !== undefined) {
+          setSoftPenalty(analytics.soft_penalties.total);
+        }
+        if (analytics?.room_analytics) {
+          const roomsArr = Object.values(analytics.room_analytics).map((r: any) => ({
+            name: r.name || r.room_id,
+            capacity: r.capacity || 0,
+            utilization: Math.round(r.utilization_pct || 0),
+          }));
+          if (roomsArr.length > 0) setRoomUtilization(roomsArr);
+        }
+      } catch {
+        // Fallback to baseline values if backend is unreachable
+      }
+    }
+    loadDashboardLive();
+  }, []);
+
+  const theoryCount = courses.filter((c) => !c.is_lab && c.category !== "Practical").length;
+  const labCount = courses.length - theoryCount;
+
+  const facultyNameById = new Map(faculty.map((f) => [f.faculty_id, f.name]));
+  const groupNameById = new Map(studentGroups.map((g) => [g.group_id, g.name]));
 
   return (
     <div className="space-y-8">
@@ -52,29 +91,29 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard
           title="Classrooms & Labs"
-          value={summary.classrooms}
+          value={classrooms.length}
           subtitle="Lecture halls & practical labs"
           icon={Building2}
           accent="blue"
         />
         <KpiCard
           title="Appointed Faculty"
-          value={summary.faculty}
+          value={faculty.length}
           subtitle="Active course instructors"
           icon={Users}
           accent="purple"
         />
         <KpiCard
           title="Academic Courses"
-          value={summary.courses}
-          subtitle="21 Theory + 3 Lab Sessions"
+          value={courses.length}
+          subtitle={`${theoryCount} Theory + ${labCount} Lab Sessions`}
           icon={BookOpen}
           accent="green"
         />
         <KpiCard
           title="Weekly Timeslots"
-          value={summary.timeslots}
-          subtitle="Mon - Sat scheduling periods"
+          value={timeslots.length}
+          subtitle={`${timeslots.filter((t) => !t.is_break).length} Teaching + ${timeslots.filter((t) => t.is_break).length} Breaks`}
           icon={Clock}
           accent="amber"
         />
@@ -88,14 +127,18 @@ export default function DashboardPage() {
               <CheckCircle2 className="w-7 h-7 text-white" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-bold text-navy-900 text-base">Active Schedule Status: 100% Conflict-Free</h3>
-                <Badge variant="success">FEASIBLE (0 Conflicts)</Badge>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="font-bold text-navy-900 text-base">Active Schedule Status</h3>
+                <Badge variant={isLiveBackend ? "success" : "warning"}>
+                  {isLiveBackend ? "LIVE DATABASE" : "OFFLINE CACHE"}
+                </Badge>
               </div>
               <p className="text-xs text-slate-600 mt-0.5">
-                Run ID: <span className="font-mono font-medium text-navy-800">{summary.active_run_id}</span> &bull; 
-                Generated via: <span className="font-medium text-navy-800">{summary.solver_used}</span> &bull; 
-                Soft Penalty: <span className="font-bold text-primary">{summary.soft_penalty_score}</span>
+                Run ID: <span className="font-mono font-medium text-navy-800">{activeRunId}</span> &bull;{" "}
+                {totalSessions !== null ? (
+                  <>Sessions: <span className="font-medium text-navy-800">{totalSessions}</span> &bull; </>
+                ) : null}
+                Soft Penalty: <span className="font-bold text-primary">{Number(softPenalty).toFixed(1)}</span>
               </p>
             </div>
           </div>
@@ -145,8 +188,8 @@ export default function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-slate-700">
-                  {MOCK_COURSES.map((c) => (
-                    <tr key={c.code} className="hover:bg-slate-50/70 transition-colors">
+                  {courses.map((c) => (
+                    <tr key={c.course_id || c.code} className="hover:bg-slate-50/70 transition-colors">
                       <td className="py-2.5 px-3 font-mono font-bold text-navy-900">{c.code}</td>
                       <td className="py-2.5 px-3 font-medium text-slate-800">{c.title}</td>
                       <td className="py-2.5 px-3">{c.weekly_hours} hrs</td>
@@ -155,8 +198,8 @@ export default function DashboardPage() {
                           {c.category}
                         </Badge>
                       </td>
-                      <td className="py-2.5 px-3 text-slate-600">{c.instructor_name}</td>
-                      <td className="py-2.5 px-3 text-slate-600">{c.group_name}</td>
+                      <td className="py-2.5 px-3 text-slate-600">{(c.assigned_faculty_id && facultyNameById.get(c.assigned_faculty_id)) || c.assigned_faculty_id || "Unassigned"}</td>
+                      <td className="py-2.5 px-3 text-slate-600">{(c.target_group_id && groupNameById.get(c.target_group_id)) || c.target_group_id || "Unassigned"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -171,7 +214,7 @@ export default function DashboardPage() {
               description="Real-time occupancy rates across theoretical auditoriums and practical laboratories."
             />
             <div className="space-y-4 pt-1">
-              {MOCK_ROOM_UTILIZATION.map((room) => (
+              {roomUtilization.map((room) => (
                 <div key={room.name} className="space-y-1">
                   <div className="flex justify-between text-xs font-medium">
                     <span className="text-navy-900">{room.name} (Cap: {room.capacity})</span>

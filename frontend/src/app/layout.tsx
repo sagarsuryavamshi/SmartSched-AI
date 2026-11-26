@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { AppShell } from "@/components/layout/AppShell";
 import { ResourceProvider } from "@/context/ResourceContext";
+import { AuthProvider } from "@/context/AuthContext";
 
 export const metadata: Metadata = {
   title: "SmartSched AI | University Timetable Operations",
@@ -16,9 +17,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased">
-        <ResourceProvider>
-          <AppShell>{children}</AppShell>
-        </ResourceProvider>
+        <AuthProvider>
+          <ResourceProvider>
+            <AppShell>{children}</AppShell>
+          </ResourceProvider>
+        </AuthProvider>
       </body>
     </html>
   );

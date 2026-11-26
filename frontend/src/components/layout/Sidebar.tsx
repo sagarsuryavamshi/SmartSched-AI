@@ -68,16 +68,22 @@ const NAV_GROUPS: NavGroup[] = [
 export function Sidebar({
   collapsed,
   setCollapsed,
+  mobileOpen = false,
+  setMobileOpen,
 }: {
   collapsed: boolean;
   setCollapsed: (v: boolean) => void;
+  mobileOpen?: boolean;
+  setMobileOpen?: (v: boolean) => void;
 }) {
   const pathname = usePathname();
 
   return (
     <aside
       className={cn(
-        "h-screen sticky top-0 bg-navy-900 text-white flex flex-col transition-all duration-200 z-30 select-none border-r border-navy-800",
+        "h-screen bg-navy-900 text-white flex flex-col transition-all duration-200 z-40 select-none border-r border-navy-800",
+        "fixed inset-y-0 left-0 md:sticky md:top-0",
+        mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
         collapsed ? "w-20" : "w-64"
       )}
     >
@@ -124,6 +130,7 @@ export function Sidebar({
                   <Link
                     key={item.href}
                     href={item.href}
+                    onClick={() => setMobileOpen && setMobileOpen(false)}
                     className={cn(
                       "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all group",
                       isActive
