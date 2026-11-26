@@ -8,11 +8,25 @@ if str(BASE_DIR) not in sys.path:
 
 from fastapi.testclient import TestClient
 from backend.app.main import app
+from backend.app.core.config import settings
+from backend.app.core.security import get_password_hash
+from src.database.user_repository import create_user, get_user_by_username
 
 class TestFastAPIEndpoints(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.client = TestClient(app)
+        db_path = str(settings.DB_PATH)
+        admin_pw = "TestApiAdmin#2026"
+        viewer_pw = "TestApiViewer#2026"
+        if not get_user_by_username("api_test_admin", db_path=db_path):
+            create_user("api_test_admin", "API Admin", "api_admin@test.edu", get_password_hash(admin_pw), "admin", db_path=db_path)
+        if not get_user_by_username("api_test_viewer", db_path=db_path):
+            create_user("api_test_viewer", "API Viewer", "api_viewer@test.edu", get_password_hash(viewer_pw), "viewer", db_path=db_path)
+        r_admin = cls.client.post("/api/v1/auth/login", json={"username": "api_test_admin", "password": admin_pw})
+        cls.admin_headers = {"Authorization": f"Bearer {r_admin.json()['access_token']}"}
+        r_viewer = cls.client.post("/api/v1/auth/login", json={"username": "api_test_viewer", "password": viewer_pw})
+        cls.viewer_headers = {"Authorization": f"Bearer {r_viewer.json()['access_token']}"}
 
     def test_01_health_check(self):
         response = self.client.get("/api/v1/health")
@@ -79,7 +93,14 @@ class TestFastAPIEndpoints(unittest.TestCase):
             "use_ac3_preprocess": True,
             "timeout_seconds": 10.0
         }
-        response = self.client.post("/api/v1/optimize/csp/solve-backtracking?async_mode=false", json=payload)
+        # Unauthenticated & viewer should be rejected
+        anon_client = TestClient(app)
+        unauth_res = anon_client.post("/api/v1/optimize/csp/solve-backtracking?async_mode=false", json=payload)
+        self.assertEqual(unauth_res.status_code, 401)
+        viewer_res = self.client.post("/api/v1/optimize/csp/solve-backtracking?async_mode=false", json=payload, headers=self.viewer_headers)
+        self.assertEqual(viewer_res.status_code, 403)
+
+        response = self.client.post("/api/v1/optimize/csp/solve-backtracking?async_mode=false", json=payload, headers=self.admin_headers)
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertTrue(data["success"])

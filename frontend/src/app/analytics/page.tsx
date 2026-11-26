@@ -1,18 +1,13 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
-  BarChart3,
   Building2,
-  Users,
-  Clock,
   Award,
-  Layers,
   BookOpen,
-  PieChart as PieChartIcon,
-  RotateCcw,
+  Users,
   Info,
-  CheckCircle2,
+  RotateCcw,
 } from "lucide-react";
 import {
   BarChart,
@@ -30,13 +25,44 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { FIXTURE_ANALYTICS_DATA } from "@/types/analyticsFixtures";
-import { useResources } from "@/context/ResourceContext";
+import { ApiClient } from "@/services/apiClient";
 
 export default function AnalyticsPage() {
-  const { faculty, classrooms, studentGroups } = useResources();
+  const [analytics, setAnalytics] = useState(FIXTURE_ANALYTICS_DATA);
+  const [isLive, setIsLive] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const [analytics] = useState(FIXTURE_ANALYTICS_DATA);
-  const [selectedDept, setSelectedDept] = useState("ALL");
+  const fetchAnalytics = async () => {
+    setIsLoading(true);
+    try {
+      const res = await ApiClient.get<{ analytics: any }>("/analytics/summary");
+      const a = res?.analytics;
+      if (a) {
+        setAnalytics({
+          total_scheduled_sessions: a.total_scheduled_sessions ?? 0,
+          total_required_sessions: a.total_required_sessions ?? 0,
+          total_unscheduled_sessions: a.total_unscheduled_sessions ?? 0,
+          completeness_percentage: a.completeness_percentage ?? 100,
+          overall_classroom_utilization_pct: a.overall_classroom_utilization_pct ?? 0,
+          total_booked_hours: a.total_booked_hours ?? 0,
+          total_idle_gap_hours: a.total_idle_gap_hours ?? 0,
+          faculty_workload: a.faculty_analytics ?? a.faculty_workload ?? FIXTURE_ANALYTICS_DATA.faculty_workload,
+          room_utilization: a.room_analytics ?? a.room_utilization ?? FIXTURE_ANALYTICS_DATA.room_utilization,
+          daily_group_workload: a.daily_group_workload ?? FIXTURE_ANALYTICS_DATA.daily_group_workload,
+          soft_constraint_breakdown: a.soft_penalties ?? a.soft_constraint_breakdown ?? FIXTURE_ANALYTICS_DATA.soft_constraint_breakdown,
+        });
+        setIsLive(true);
+      }
+    } catch {
+      setIsLive(false);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAnalytics();
+  }, []);
 
   // Format Faculty Workload Data for Recharts
   const facultyChartData = Object.values(analytics.faculty_workload).map((f) => ({
@@ -73,7 +99,13 @@ export default function AnalyticsPage() {
         description="Comprehensive operational intelligence, classroom utilization, faculty workload distribution, and soft constraint penalty analytics."
         actions={
           <div className="flex items-center gap-2">
-            <Badge variant="info">Verified Database Records</Badge>
+            <Badge variant={isLive ? "success" : "warning"}>
+              {isLoading ? "Syncing..." : isLive ? "Live Database Records" : "Offline Cache"}
+            </Badge>
+            <Button variant="ghost" size="sm" onClick={fetchAnalytics} disabled={isLoading} className="text-xs">
+              <RotateCcw className="w-3.5 h-3.5 mr-1" />
+              <span>Refresh</span>
+            </Button>
           </div>
         }
       />

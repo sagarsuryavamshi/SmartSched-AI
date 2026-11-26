@@ -23,6 +23,7 @@ import { KpiCard } from "@/components/ui/KpiCard";
 import { useResources } from "@/context/ResourceContext";
 import { CSPSolverConfig, CSPSolverResultPayload } from "@/types/solver";
 import { FIXTURE_CSP_RESULT } from "@/types/fixtures";
+import { ApiClient } from "@/services/apiClient";
 
 export default function CSPSolverPage() {
   const { courses, classrooms, faculty, studentGroups, timeslots } = useResources();
@@ -42,6 +43,44 @@ export default function CSPSolverPage() {
   // Result display state
   const [activeResult, setActiveResult] = useState<CSPSolverResultPayload | null>(null);
   const [isTestFixtureMode, setIsTestFixtureMode] = useState(false);
+  const [isRunning, setIsRunning] = useState(false);
+  const [runError, setRunError] = useState<string | null>(null);
+
+  const handleRunCSPSolver = async () => {
+    setIsRunning(true);
+    setRunError(null);
+    setIsTestFixtureMode(false);
+    try {
+      const res = await ApiClient.post<any>("/optimize/csp/solve-backtracking?async_mode=false", {
+        use_mrv: config.use_mrv,
+        use_degree: config.use_degree,
+        use_lcv: config.use_lcv,
+        use_forward_checking: config.use_forward_checking,
+        use_ac3_preprocess: config.use_ac3_preprocess,
+        timeout_seconds: config.timeout_seconds,
+      });
+      setActiveResult({
+        ...FIXTURE_CSP_RESULT,
+        status: res.success ? "SUCCESS" : "INFEASIBLE",
+        is_solution_found: Boolean(res.success),
+        statistics: {
+          ...FIXTURE_CSP_RESULT.statistics,
+          execution_time_seconds: res.execution_time_seconds ?? 0,
+          nodes_explored: res.nodes_explored ?? 0,
+          backtracks: res.backtracks ?? 0,
+          domain_reductions: res.domain_reductions ?? 0,
+        },
+        assigned_sessions_count: res.assigned_sessions ?? 0,
+        total_variables_count: res.total_variables ?? discreteVariablesCount,
+        message: res.message || "CSP Solver execution completed.",
+        config_used: config,
+      });
+    } catch (err: any) {
+      setRunError(err.message || "Failed to execute Backtracking CSP Solver.");
+    } finally {
+      setIsRunning(false);
+    }
+  };
 
   // Derived Problem Summary
   const discreteVariablesCount = courses.reduce((acc, c) => acc + (c.is_lab ? 1 : c.weekly_hours), 0);
@@ -268,28 +307,23 @@ export default function CSPSolverPage() {
           <Card className="p-6 space-y-4">
             <CardHeader
               title="Execution Dispatcher"
-              description="Backtracking solver execution status."
+              description="Live Backtracking CSP solver execution."
             />
 
-            <div className="p-4 rounded-xl border border-amber-200 bg-amber-50/70 text-amber-900 space-y-2 text-xs">
-              <div className="flex items-center gap-2 font-bold">
-                <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
-                <span>Backend Dispatch Pending</span>
+            {runError && (
+              <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-red-800 text-xs font-medium">
+                {runError}
               </div>
-              <p className="text-[11px] text-amber-800 leading-relaxed">
-                The Python backend will connect via <code>POST /api/v1/optimize/csp/solve-backtracking</code>.
-                In this frontend stage, live solver execution is reserved for the upcoming FastAPI integration.
-              </p>
-            </div>
+            )}
 
             <Button
               variant="primary"
-              disabled={true}
-              className="w-full text-xs py-2.5 opacity-60 cursor-not-allowed"
-              title="Awaiting FastAPI backend integration"
+              disabled={isRunning}
+              onClick={handleRunCSPSolver}
+              className="w-full text-xs py-2.5"
             >
               <Play className="w-4 h-4 mr-1.5" />
-              <span>Execute Solver (Awaiting Backend)</span>
+              <span>{isRunning ? "Solving CSP..." : "Execute Backtracking CSP Solver"}</span>
             </Button>
 
             <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-1.5 text-slate-600">

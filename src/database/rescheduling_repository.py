@@ -137,7 +137,7 @@ def apply_reschedule_transaction(
                 """,
                 (
                     change_id,
-                    primary_old["assignment_id"],
+                    ",".join(r["assignment_id"] for r in old_records),
                     primary_old["code"],
                     primary_old["group_id"],
                     primary_old["faculty_id"],
@@ -182,31 +182,21 @@ def rollback_reschedule_transaction(
             if chg["status"] == "ROLLED_BACK":
                 return False, f"Change '{change_id}' has already been rolled back."
 
-            session_id = chg["session_id"]
+            session_ids = chg["session_id"].split(",")
             old_room_id = chg["old_room_id"]
             old_slot_ids = chg["old_slot_id"].split(",")
             new_slot_ids = chg["new_slot_id"].split(",")
 
-            # Revert the scheduled assignments
-            # Find the assignments corresponding to the session
-            cursor.execute(
-                """
-                SELECT sa.assignment_id, sa.slot_id
-                FROM scheduled_assignments sa
-                WHERE sa.room_id = ? AND sa.slot_id IN ({})
-                """.format(",".join("?" * len(new_slot_ids))),
-                [chg["new_room_id"]] + new_slot_ids,
-            )
-            current_rows = cursor.fetchall()
-
-            for old_s_id, new_s_id in zip(old_slot_ids, new_slot_ids):
+            # Revert only the exact scheduled assignments belonging to this change record
+            for idx, (old_s_id, new_s_id) in enumerate(zip(old_slot_ids, new_slot_ids)):
+                target_asg_id = session_ids[idx] if idx < len(session_ids) else session_ids[0]
                 cursor.execute(
                     """
                     UPDATE scheduled_assignments
                     SET room_id = ?, slot_id = ?
-                    WHERE room_id = ? AND slot_id = ?
+                    WHERE assignment_id = ? AND room_id = ? AND slot_id = ?
                     """,
-                    (old_room_id, old_s_id, chg["new_room_id"], new_s_id),
+                    (old_room_id, old_s_id, target_asg_id, chg["new_room_id"], new_s_id),
                 )
 
             # Mark change as rolled back

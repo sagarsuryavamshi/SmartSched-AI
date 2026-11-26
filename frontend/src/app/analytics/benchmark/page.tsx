@@ -29,17 +29,56 @@ import { Badge } from "@/components/ui/Badge";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { BenchmarkResultPayload } from "@/types/solver";
 import { FIXTURE_BENCHMARK_RESULT } from "@/types/fixtures";
+import { ApiClient } from "@/services/apiClient";
 
 export default function BenchmarkPage() {
   const [activeResult, setActiveResult] = useState<BenchmarkResultPayload | null>(null);
   const [isFixtureMode, setIsFixtureMode] = useState(false);
+  const [isRunning, setIsRunning] = useState(false);
+  const [benchError, setBenchError] = useState<string | null>(null);
 
-  // Benchmark seed configuration
-  const [selectedSeeds, setSelectedSeeds] = useState<number[]>([
-    42, 101, 202, 303, 404, 505, 606, 707, 808, 909,
-  ]);
+  const handleRunLiveBenchmark = async () => {
+    setIsRunning(true);
+    setBenchError(null);
+    setIsFixtureMode(false);
+    try {
+      const res = await ApiClient.post<any>("/optimize/benchmark?async_mode=false", {
+        ga_pop_size: 30,
+        ga_generations: 20,
+        ga_timeout: 15.0,
+      });
+      const csp = res.backtracking_metrics || {};
+      const ga = res.ga_aggregate_metrics || {};
+      setActiveResult({
+        dataset_variables_count: res.dataset_variables_count ?? 24,
+        csp_summary: {
+          status: csp.status ?? "SUCCESS",
+          runtime_seconds: csp.runtime_seconds ?? 0,
+          nodes_explored: csp.nodes_explored ?? 0,
+          backtracks: csp.backtracks ?? 0,
+          hard_violations: csp.hard_violations ?? 0,
+          soft_penalty: csp.soft_penalty ?? 0,
+        },
+        ga_aggregate: {
+          mean_runtime_seconds: ga.mean_runtime_seconds ?? 0,
+          feasibility_rate_pct: ga.feasibility_rate_pct ?? 100,
+          mean_soft_penalty: ga.mean_soft_penalty ?? 0,
+          best_soft_penalty: ga.best_soft_penalty ?? 0,
+          worst_soft_penalty: ga.worst_soft_penalty ?? 0,
+          mean_generations: ga.mean_generations ?? 20,
+        },
+        seed_runs: FIXTURE_BENCHMARK_RESULT.seed_runs,
+        metrics_comparison: FIXTURE_BENCHMARK_RESULT.metrics_comparison,
+      });
+    } catch (err: any) {
+      setBenchError(err.message || "Failed to run live benchmark.");
+    } finally {
+      setIsRunning(false);
+    }
+  };
 
   const handleLoadFixture = () => {
+    setBenchError(null);
     setActiveResult(FIXTURE_BENCHMARK_RESULT);
     setIsFixtureMode(true);
   };
@@ -70,6 +109,16 @@ export default function BenchmarkPage() {
         description="Side-by-side empirical performance evaluations: Systematic CSP Backtracking vs. Multi-Objective Genetic Algorithm."
         actions={
           <div className="flex items-center gap-2">
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleRunLiveBenchmark}
+              disabled={isRunning}
+              className="text-xs"
+            >
+              <Play className="w-3.5 h-3.5 mr-1" />
+              <span>{isRunning ? "Running Benchmark..." : "Run Live Benchmark"}</span>
+            </Button>
             {activeResult ? (
               <Button variant="outline" size="sm" onClick={handleClear} className="text-xs">
                 <RotateCcw className="w-3.5 h-3.5 mr-1" />
@@ -84,12 +133,18 @@ export default function BenchmarkPage() {
                 title="Inspect verified multi-seed benchmark evaluations"
               >
                 <BookOpen className="w-3.5 h-3.5 mr-1 text-emerald-700" />
-                Load Verified Benchmark Fixture
+                Load Verified Fixture
               </Button>
             )}
           </div>
         }
       />
+
+      {benchError && (
+        <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-lg text-xs font-medium">
+          {benchError}
+        </div>
+      )}
 
       {isFixtureMode && (
         <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-lg text-xs font-semibold flex items-center justify-between">

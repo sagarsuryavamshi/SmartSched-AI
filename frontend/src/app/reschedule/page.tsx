@@ -1,32 +1,25 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import {
   RotateCcw,
   ArrowRight,
   ShieldAlert,
   ShieldCheck,
   CheckCircle2,
-  AlertTriangle,
-  History,
   Info,
-  Calendar,
-  Building2,
-  Users,
-  Clock,
-  Layers,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { KpiCard } from "@/components/ui/KpiCard";
 import { useResources } from "@/context/ResourceContext";
 import { ScheduledSession } from "@/types/timetable";
 import { INITIAL_SCHEDULED_SESSIONS } from "@/mock/timetableData";
 import { DayOfWeek } from "@/types";
 import { FIXTURE_RESCHEDULE_HISTORY } from "@/types/analyticsFixtures";
 import { RescheduleHistoryRecord } from "@/types/analytics";
+import { ApiClient } from "@/services/apiClient";
 
 const DAYS: DayOfWeek[] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 
@@ -37,8 +30,8 @@ export default function ReschedulingPage() {
   const [activeTab, setActiveTab] = useState<"PLANNER" | "HISTORY">("PLANNER");
 
   // Active Sessions
-  const [sessions] = useState<ScheduledSession[]>(INITIAL_SCHEDULED_SESSIONS);
-  const [selectedSessionId, setSelectedSessionId] = useState<string>(sessions[0]?.assignment_id || "");
+  const [sessions, setSessions] = useState<ScheduledSession[]>(INITIAL_SCHEDULED_SESSIONS);
+  const [selectedSessionId, setSelectedSessionId] = useState<string>(INITIAL_SCHEDULED_SESSIONS[0]?.assignment_id || "");
 
   // Candidate Proposed Choices
   const [proposedDay, setProposedDay] = useState<DayOfWeek>("Tuesday");
@@ -51,6 +44,65 @@ export default function ReschedulingPage() {
   // Preview / Evaluation State
   const [previewEvaluated, setPreviewEvaluated] = useState(false);
   const [commitMessage, setCommitMessage] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [backendPreview, setBackendPreview] = useState<{
+    isValid: boolean;
+    hardViolations: string[];
+    penaltyDelta: number;
+  } | null>(null);
+
+  const loadLiveReschedulingData = useCallback(async () => {
+    try {
+      const [ttRes, histRes] = await Promise.all([
+        ApiClient.get<{ sessions: any[] }>("/timetable/active"),
+        ApiClient.get<any[]>("/rescheduling/history"),
+      ]);
+      if (ttRes && Array.isArray(ttRes.sessions) && ttRes.sessions.length > 0) {
+        const mapped: ScheduledSession[] = ttRes.sessions.map((r: any) => ({
+          assignment_id: r.assignment_id,
+          course_code: r.course_code,
+          course_title: r.course_title,
+          course_category: r.course_category || (r.room_type === "LAB" ? "Practical" : "Theory"),
+          faculty_id: r.faculty_id,
+          faculty_name: r.faculty_name,
+          group_id: r.group_id,
+          group_name: r.group_name,
+          room_id: r.room_id,
+          room_name: r.room_name || r.room_id,
+          room_type: r.room_type || "LECTURE_HALL",
+          slot_id: r.slot_id,
+          day: r.day,
+          start_time: r.start_time,
+          end_time: r.end_time,
+          duration_minutes: r.duration_minutes || 60,
+        }));
+        setSessions(mapped);
+        setSelectedSessionId((prev) => (mapped.some((s) => s.assignment_id === prev) ? prev : mapped[0].assignment_id));
+      }
+      if (Array.isArray(histRes)) {
+        const mappedHist: RescheduleHistoryRecord[] = histRes.map((h: any) => ({
+          change_id: h.change_id,
+          timestamp: h.timestamp || "",
+          course_code: h.course_code,
+          faculty_name: h.faculty_id,
+          group_name: h.group_id,
+          from_slot: `${h.old_day} ${h.old_start_time}`,
+          to_slot: `${h.new_day} ${h.new_start_time}`,
+          from_room: h.old_room_id,
+          to_room: h.new_room_id,
+          is_rolled_back: h.status === "ROLLED_BACK",
+        }));
+        setHistory(mappedHist);
+      }
+    } catch {
+      // Fallback to baseline fixtures if backend unreachable
+    }
+  }, []);
+
+  useEffect(() => {
+    loadLiveReschedulingData();
+  }, [loadLiveReschedulingData]);
 
   // Selected Session Object
   const selectedSession = useMemo(() => {
@@ -131,35 +183,59 @@ export default function ReschedulingPage() {
     };
   }, [selectedSession, proposedSlot, proposedRoom, proposedDay, sessions]);
 
-  const handlePreview = () => {
-    setPreviewEvaluated(true);
+  const handlePreview = async () => {
+    setActionError(null);
     setCommitMessage(null);
+    setPreviewEvaluated(true);
+    setBackendPreview(null);
+    if (!selectedSession || !proposedSlot || !proposedRoom) return;
+    try {
+      const res = await ApiClient.post<any>("/rescheduling/preview", {
+        variable_id: selectedSession.assignment_id,
+        new_room_id: proposedRoom.room_id,
+        new_slot_ids: [proposedSlot.slot_id],
+        reason: "Administrator What-If Preview",
+      });
+      setBackendPreview({
+        isValid: Boolean(res.is_valid && res.is_hard_conflict_free),
+        hardViolations: (res.hard_violations || []).map((v: any) => `[${v.constraint_id}] ${v.description}`),
+        penaltyDelta: Number(res.soft_penalty_delta ?? 0),
+      });
+    } catch {
+      // Keep client-side validationResult as fallback if backend preview unavailable
+    }
   };
 
-  const handleSimulateCommit = () => {
-    if (!validationResult.isValid) return;
+  const effectiveValidation = backendPreview || validationResult;
 
-    const newRecord: RescheduleHistoryRecord = {
-      change_id: `CHG_${Date.now().toString(16).slice(-8).toUpperCase()}`,
-      timestamp: new Date().toISOString().replace("T", " ").slice(0, 19),
-      course_code: selectedSession.course_code,
-      faculty_name: selectedSession.faculty_name,
-      group_name: selectedSession.group_name,
-      from_slot: `${selectedSession.day} ${selectedSession.start_time}-${selectedSession.end_time}`,
-      to_slot: `${proposedDay} ${proposedSlot?.start_time}-${proposedSlot?.end_time}`,
-      from_room: selectedSession.room_name,
-      to_room: proposedRoom?.name || "",
-      is_rolled_back: false,
-    };
-
-    setHistory([newRecord, ...history]);
-    setCommitMessage(`Local preview updated: '${selectedSession.course_code}' moved to ${proposedDay} ${proposedSlot?.start_time} in ${proposedRoom?.name}. (Awaiting FastAPI backend persistence).`);
+  const handleSimulateCommit = async () => {
+    if (!effectiveValidation.isValid || !selectedSession || !proposedSlot || !proposedRoom) return;
+    setIsSubmitting(true);
+    setActionError(null);
+    try {
+      const res = await ApiClient.post<any>("/rescheduling/commit", {
+        assignment_ids: [selectedSession.assignment_id],
+        new_room_id: proposedRoom.room_id,
+        new_slot_ids: [proposedSlot.slot_id],
+        reason: "Admin What-If Adjustment",
+      });
+      setCommitMessage(res.message || `Committed reschedule (${res.change_id}).`);
+      await loadLiveReschedulingData();
+    } catch (err: any) {
+      setActionError(err.message || "Failed to commit reschedule.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleRollback = (changeId: string) => {
-    setHistory((prev) =>
-      prev.map((h) => (h.change_id === changeId ? { ...h, is_rolled_back: true } : h))
-    );
+  const handleRollback = async (changeId: string) => {
+    setActionError(null);
+    try {
+      await ApiClient.post<any>(`/rescheduling/rollback/${changeId}`, {});
+      await loadLiveReschedulingData();
+    } catch (err: any) {
+      setActionError(err.message || `Failed to rollback ${changeId}.`);
+    }
   };
 
   return (
@@ -321,8 +397,8 @@ export default function ReschedulingPage() {
             <Card className="p-6 space-y-6 border-2 border-primary/20">
               <div className="flex items-center justify-between border-b border-slate-200 pb-3">
                 <h4 className="font-bold text-navy-900 text-sm">Scenario Evaluation: Side-by-Side Comparison</h4>
-                <Badge variant={validationResult.isValid ? "success" : "danger"}>
-                  {validationResult.isValid ? "Valid & Conflict-Free" : "Constraint Conflicts Detected"}
+                <Badge variant={effectiveValidation.isValid ? "success" : "danger"}>
+                  {effectiveValidation.isValid ? "Valid & Conflict-Free" : "Constraint Conflicts Detected"}
                 </Badge>
               </div>
 
@@ -342,7 +418,7 @@ export default function ReschedulingPage() {
 
                 {/* Proposed */}
                 <div className={`p-4 border rounded-xl space-y-2 ${
-                  validationResult.isValid ? "bg-emerald-50/50 border-emerald-300" : "bg-red-50/50 border-red-300"
+                  effectiveValidation.isValid ? "bg-emerald-50/50 border-emerald-300" : "bg-red-50/50 border-red-300"
                 }`}>
                   <span className="font-bold text-slate-500 uppercase tracking-wider block text-[11px]">Proposed Scenario</span>
                   <div className="font-bold text-navy-900 text-sm">{selectedSession.course_code} — {selectedSession.course_title}</div>
@@ -356,24 +432,24 @@ export default function ReschedulingPage() {
               </div>
 
               {/* Validation Feedback Banner */}
-              {validationResult.isValid ? (
+              {effectiveValidation.isValid ? (
                 <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-900 space-y-1">
                   <div className="font-bold flex items-center gap-2">
                     <ShieldCheck className="w-4 h-4 text-emerald-700" />
                     <span>All Hard Constraints Verified (H1–H8 Passed)</span>
                   </div>
                   <p className="text-[11px] text-emerald-800">
-                    Estimated soft penalty impact: <strong className="text-emerald-700">{validationResult.penaltyDelta.toFixed(1)} pts</strong> (improves faculty preference satisfaction).
+                    Estimated soft penalty impact: <strong className="text-emerald-700">{effectiveValidation.penaltyDelta.toFixed(1)} pts</strong>.
                   </p>
                 </div>
               ) : (
                 <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-xs text-red-900 space-y-2">
                   <div className="font-bold flex items-center gap-2">
                     <ShieldAlert className="w-4 h-4 text-red-700" />
-                    <span>Hard Constraint Violations Detected ({validationResult.hardViolations.length})</span>
+                    <span>Hard Constraint Violations Detected ({effectiveValidation.hardViolations.length})</span>
                   </div>
                   <ul className="list-disc pl-5 space-y-1 text-[11px] text-red-800">
-                    {validationResult.hardViolations.map((v, i) => (
+                    {effectiveValidation.hardViolations.map((v, i) => (
                       <li key={i}>{v}</li>
                     ))}
                   </ul>
@@ -391,14 +467,20 @@ export default function ReschedulingPage() {
                 <Button
                   variant="primary"
                   size="sm"
-                  disabled={!validationResult.isValid}
+                  disabled={!effectiveValidation.isValid || isSubmitting}
                   onClick={handleSimulateCommit}
-                  className={`text-xs ${validationResult.isValid ? "bg-emerald-600 hover:bg-emerald-700" : "opacity-50 cursor-not-allowed"}`}
+                  className={`text-xs ${effectiveValidation.isValid ? "bg-emerald-600 hover:bg-emerald-700" : "opacity-50 cursor-not-allowed"}`}
                 >
                   <CheckCircle2 className="w-4 h-4 mr-1.5" />
-                  <span>Commit Scenario (Local Preview)</span>
+                  <span>{isSubmitting ? "Committing..." : "Commit Reschedule to Database"}</span>
                 </Button>
               </div>
+
+              {actionError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-800 font-semibold">
+                  {actionError}
+                </div>
+              )}
 
               {commitMessage && (
                 <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800 font-semibold">

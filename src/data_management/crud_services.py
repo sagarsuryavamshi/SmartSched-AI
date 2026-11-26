@@ -490,7 +490,7 @@ def create_course(
             """INSERT INTO courses
                (course_id, code, title, weekly_hours, required_room_type, category, is_lab, assigned_faculty_id, target_group_id)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (course_id, code, title, weekly_hours, required_room_type, category, 1 if is_lab else 0, assigned_faculty_id, target_group_id),
+            (course_id, code, title, weekly_hours, required_room_type, category, bool(is_lab), assigned_faculty_id, target_group_id),
         )
     logger.info("Created course: %s - %s", code, title)
     return True, f"Course '{code}: {title}' created successfully."
@@ -543,7 +543,7 @@ def update_course(
             """UPDATE courses
                SET code = ?, title = ?, weekly_hours = ?, required_room_type = ?, category = ?, is_lab = ?, assigned_faculty_id = ?, target_group_id = ?
                WHERE course_id = ?""",
-            (code, title, weekly_hours, required_room_type, category, 1 if is_lab else 0, assigned_faculty_id, target_group_id, course_id),
+            (code, title, weekly_hours, required_room_type, category, bool(is_lab), assigned_faculty_id, target_group_id, course_id),
         )
     logger.info("Updated course: %s", course_id)
     return True, f"Course '{code}' updated successfully."
@@ -648,7 +648,7 @@ def create_timeslot(
         cursor.execute(
             """INSERT INTO timeslots (slot_id, day, start_time, end_time, duration_minutes, is_break)
                VALUES (?, ?, ?, ?, ?, ?)""",
-            (slot_id, day, start_time, end_time, duration_minutes, 1 if is_break else 0),
+            (slot_id, day, start_time, end_time, duration_minutes, bool(is_break)),
         )
     logger.info("Created timeslot: %s (%s %s-%s)", slot_id, day, start_time, end_time)
     return True, f"Timeslot '{slot_id}' ({day} {start_time}-{end_time}) created successfully."
@@ -680,7 +680,7 @@ def update_timeslot(
             """UPDATE timeslots
                SET day = ?, start_time = ?, end_time = ?, duration_minutes = ?, is_break = ?
                WHERE slot_id = ?""",
-            (day, start_time, end_time, duration_minutes, 1 if is_break else 0, slot_id),
+            (day, start_time, end_time, duration_minutes, bool(is_break), slot_id),
         )
     logger.info("Updated timeslot: %s", slot_id)
     return True, f"Timeslot '{slot_id}' updated successfully."

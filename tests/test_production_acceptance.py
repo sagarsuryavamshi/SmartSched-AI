@@ -23,28 +23,42 @@ if str(BASE_DIR) not in sys.path:
 
 from fastapi.testclient import TestClient
 from backend.app.main import app
+from backend.app.core.config import settings
+from backend.app.core.security import get_password_hash
+from src.database.user_repository import create_user, get_user_by_username
 
 class TestProductionAcceptance(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.client = TestClient(app)
+        db_path = str(settings.DB_PATH)
+        cls.admin_pw = "AcceptAdmin#2026"
+        cls.viewer_pw = "AcceptViewer#2026"
+        if not get_user_by_username("accept_admin", db_path=db_path):
+            create_user("accept_admin", "Acceptance Admin", "accept_admin@test.edu", get_password_hash(cls.admin_pw), "admin", db_path=db_path)
+        if not get_user_by_username("accept_viewer", db_path=db_path):
+            create_user("accept_viewer", "Acceptance Viewer", "accept_viewer@test.edu", get_password_hash(cls.viewer_pw), "viewer", db_path=db_path)
+        r_admin = cls.client.post("/api/v1/auth/login", json={"username": "accept_admin", "password": cls.admin_pw})
+        cls.admin_headers = {"Authorization": f"Bearer {r_admin.json()['access_token']}"}
+        r_viewer = cls.client.post("/api/v1/auth/login", json={"username": "accept_viewer", "password": cls.viewer_pw})
+        cls.viewer_headers = {"Authorization": f"Bearer {r_viewer.json()['access_token']}"}
 
     # Workflow 1: Authentication
     def test_workflow_01_authentication(self):
         # Admin login
-        r_admin = self.client.post("/api/v1/auth/login", json={"username": "admin", "password": "Admin@SmartSched2026"})
+        r_admin = self.client.post("/api/v1/auth/login", json={"username": "accept_admin", "password": self.admin_pw})
         self.assertEqual(r_admin.status_code, 200)
         admin_token = r_admin.json()["access_token"]
         self.assertEqual(r_admin.json()["role"], "admin")
 
         # Viewer login
-        r_viewer = self.client.post("/api/v1/auth/login", json={"username": "viewer", "password": "Viewer@SmartSched2026"})
+        r_viewer = self.client.post("/api/v1/auth/login", json={"username": "accept_viewer", "password": self.viewer_pw})
         self.assertEqual(r_viewer.status_code, 200)
         viewer_token = r_viewer.json()["access_token"]
         self.assertEqual(r_viewer.json()["role"], "viewer")
 
         # Reject bad credentials
-        r_bad = self.client.post("/api/v1/auth/login", json={"username": "admin", "password": "bad"})
+        r_bad = self.client.post("/api/v1/auth/login", json={"username": "accept_admin", "password": "bad"})
         self.assertEqual(r_bad.status_code, 401)
 
         # RBAC: Viewer cannot list users
@@ -66,16 +80,21 @@ class TestProductionAcceptance(unittest.TestCase):
             "room_type": "LAB",
             "features": "GPU Cluster"
         }
+        # Unauthenticated & viewer rejected on mutations
+        anon_client = TestClient(app)
+        self.assertEqual(anon_client.post("/api/v1/resources/classrooms", json=test_room).status_code, 401)
+        self.assertEqual(self.client.post("/api/v1/resources/classrooms", json=test_room, headers=self.viewer_headers).status_code, 403)
+
         # Create
-        r_create = self.client.post("/api/v1/resources/classrooms", json=test_room)
+        r_create = self.client.post("/api/v1/resources/classrooms", json=test_room, headers=self.admin_headers)
         self.assertEqual(r_create.status_code, 200)
 
         # Update
-        r_update = self.client.put(f"/api/v1/resources/classrooms/{unique_id}", json={"capacity": 50})
+        r_update = self.client.put(f"/api/v1/resources/classrooms/{unique_id}", json={"capacity": 50}, headers=self.admin_headers)
         self.assertEqual(r_update.status_code, 200)
 
         # Delete
-        r_delete = self.client.delete(f"/api/v1/resources/classrooms/{unique_id}")
+        r_delete = self.client.delete(f"/api/v1/resources/classrooms/{unique_id}", headers=self.admin_headers)
         self.assertEqual(r_delete.status_code, 200)
 
     # Workflow 3: CSP Solver
@@ -88,7 +107,7 @@ class TestProductionAcceptance(unittest.TestCase):
             "use_ac3_preprocess": True,
             "timeout_seconds": 15.0
         }
-        res = self.client.post("/api/v1/optimize/csp/solve-backtracking?async_mode=false", json=payload)
+        res = self.client.post("/api/v1/optimize/csp/solve-backtracking?async_mode=false", json=payload, headers=self.admin_headers)
         self.assertEqual(res.status_code, 200)
         data = res.json()
         self.assertTrue(data["success"])
@@ -106,7 +125,7 @@ class TestProductionAcceptance(unittest.TestCase):
             "tournament_size": 3,
             "timeout_seconds": 10.0
         }
-        res = self.client.post("/api/v1/optimize/ga/solve?async_mode=false", json=payload)
+        res = self.client.post("/api/v1/optimize/ga/solve?async_mode=false", json=payload, headers=self.admin_headers)
         self.assertEqual(res.status_code, 200)
         data = res.json()
         self.assertIn("success", data)
@@ -119,7 +138,7 @@ class TestProductionAcceptance(unittest.TestCase):
             "ga_generations": 10,
             "ga_timeout": 5.0
         }
-        res = self.client.post("/api/v1/optimize/benchmark?async_mode=false", json=payload)
+        res = self.client.post("/api/v1/optimize/benchmark?async_mode=false", json=payload, headers=self.admin_headers)
         self.assertEqual(res.status_code, 200)
         data = res.json()
         self.assertIn("comparison_table", data)

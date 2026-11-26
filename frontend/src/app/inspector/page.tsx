@@ -1,18 +1,12 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import {
   ShieldAlert,
   ShieldCheck,
-  CheckCircle2,
   AlertTriangle,
-  Info,
-  Filter,
-  Search,
   BookOpen,
-  Users,
   Building2,
-  Clock,
   ArrowRight,
   RotateCcw,
 } from "lucide-react";
@@ -24,6 +18,7 @@ import { Badge } from "@/components/ui/Badge";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { FIXTURE_VIOLATIONS_SAMPLE } from "@/types/analyticsFixtures";
 import { ConstraintViolationItem } from "@/types/analytics";
+import { ApiClient } from "@/services/apiClient";
 
 const HARD_RULES_SUMMARY = [
   { id: "H1", name: "Faculty Double-Booking", desc: "No instructor assigned to simultaneous lectures" },
@@ -37,17 +32,53 @@ const HARD_RULES_SUMMARY = [
 ];
 
 export default function InspectorPage() {
-  // Mode: Verified Clean Schedule vs. Injected Conflict Audit Fixture
+  // Mode: Live Backend Validation Audit vs. Simulated Conflict Audit Fixture
   const [viewAuditMode, setViewAuditMode] = useState<"VERIFIED_CLEAN" | "SIMULATED_CONFLICTS">("VERIFIED_CLEAN");
+  const [liveViolations, setLiveViolations] = useState<ConstraintViolationItem[]>([]);
+  const [isLiveValid, setIsLiveValid] = useState<boolean>(true);
+  const [assignedVars, setAssignedVars] = useState<number>(24);
+  const [totalVars, setTotalVars] = useState<number>(24);
+  const [isAuditing, setIsAuditing] = useState<boolean>(false);
+  const [auditError, setAuditError] = useState<string | null>(null);
 
   // Filter State
   const [filterConstraint, setFilterConstraint] = useState<string>("ALL");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery] = useState("");
+
+  const runLiveAudit = useCallback(async () => {
+    setIsAuditing(true);
+    setAuditError(null);
+    try {
+      const res = await ApiClient.post<any>("/validation/validate", {});
+      setIsLiveValid(Boolean(res.is_valid));
+      setAssignedVars(res.assigned_variables ?? 0);
+      setTotalVars(res.total_variables ?? 0);
+      const mapped: ConstraintViolationItem[] = (res.hard_violations || []).map((v: any) => ({
+        constraint_id: v.constraint_id || "H1",
+        constraint_name: v.constraint_name || "Hard Constraint",
+        severity: v.severity || "CRITICAL",
+        description: v.description || "",
+        affected_course: Array.isArray(v.entities_involved) ? v.entities_involved.join(", ") : "",
+        affected_faculty: "-",
+        affected_room: "-",
+        slot_label: "-",
+      }));
+      setLiveViolations(mapped);
+    } catch (err: any) {
+      setAuditError(err.message || "Could not reach validation endpoint.");
+    } finally {
+      setIsAuditing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    runLiveAudit();
+  }, [runLiveAudit]);
 
   const violations: ConstraintViolationItem[] = useMemo(() => {
-    if (viewAuditMode === "VERIFIED_CLEAN") return [];
+    if (viewAuditMode === "VERIFIED_CLEAN") return liveViolations;
     return FIXTURE_VIOLATIONS_SAMPLE;
-  }, [viewAuditMode]);
+  }, [viewAuditMode, liveViolations]);
 
   const filteredViolations = useMemo(() => {
     return violations.filter((v) => {
@@ -75,7 +106,17 @@ export default function InspectorPage() {
         actions={
           <div className="flex items-center gap-2">
             <Button
-              variant={viewAuditMode === "VERIFIED_CLEAN" ? "outline" : "outline"}
+              variant="outline"
+              size="sm"
+              onClick={runLiveAudit}
+              disabled={isAuditing}
+              className="text-xs"
+            >
+              <RotateCcw className="w-3.5 h-3.5 mr-1" />
+              <span>{isAuditing ? "Auditing..." : "Re-run Live Audit"}</span>
+            </Button>
+            <Button
+              variant="outline"
               size="sm"
               onClick={() => setViewAuditMode(viewAuditMode === "VERIFIED_CLEAN" ? "SIMULATED_CONFLICTS" : "VERIFIED_CLEAN")}
               className={`text-xs ${
@@ -84,26 +125,51 @@ export default function InspectorPage() {
                   : "border-slate-200 text-slate-700"
               }`}
             >
-              <span>{viewAuditMode === "VERIFIED_CLEAN" ? "Inspect Diagnostic Conflict Scenario" : "Switch to Verified Active Baseline"}</span>
+              <span>{viewAuditMode === "VERIFIED_CLEAN" ? "Inspect Demo Conflict Scenario" : "Switch to Live Database Audit"}</span>
             </Button>
           </div>
         }
       />
 
+      {auditError && (
+        <div className="p-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-lg text-xs font-medium">
+          Validation endpoint note: {auditError}
+        </div>
+      )}
+
       {/* State Banner */}
       {viewAuditMode === "VERIFIED_CLEAN" ? (
-        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-              <ShieldCheck className="w-6 h-6" />
+        isLiveValid && liveViolations.length === 0 ? (
+          <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                <ShieldCheck className="w-6 h-6" />
+              </div>
+              <div>
+                <h4 className="font-bold text-emerald-950 text-sm">100% Conflict-Free Feasible Timetable</h4>
+                <span className="text-xs text-emerald-700">
+                  0 Hard Constraint Violations across {assignedVars} / {totalVars} scheduled variables in database.
+                </span>
+              </div>
             </div>
-            <div>
-              <h4 className="font-bold text-emerald-950 text-sm">100% Conflict-Free Feasible Timetable</h4>
-              <span className="text-xs text-emerald-700">0 Hard Constraint Violations across all 24 scheduled variables in SQLite.</span>
-            </div>
+            <Badge variant="success">8 / 8 Rules Verified</Badge>
           </div>
-          <Badge variant="success">8 / 8 Rules Verified</Badge>
-        </div>
+        ) : (
+          <div className="p-4 bg-red-50 border border-red-200 rounded-xl flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-red-100 text-red-700 flex items-center justify-center shrink-0">
+                <ShieldAlert className="w-6 h-6" />
+              </div>
+              <div>
+                <h4 className="font-bold text-red-950 text-sm">Live Schedule Violations Detected</h4>
+                <span className="text-xs text-red-700">
+                  {liveViolations.length} hard constraint violations across {assignedVars} / {totalVars} variables.
+                </span>
+              </div>
+            </div>
+            <Badge variant="danger">Action Required</Badge>
+          </div>
+        )
       ) : (
         <div className="p-4 bg-red-50 border border-red-200 rounded-xl flex items-center justify-between">
           <div className="flex items-center gap-3">

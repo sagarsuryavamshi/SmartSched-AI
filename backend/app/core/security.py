@@ -12,14 +12,18 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from fastapi import Depends, HTTPException, status, Header
+from fastapi import Depends, HTTPException, status, Header, Request
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel
+from backend.app.core.config import settings
 
 # Security settings
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "smartsched-super-secure-production-secret-key-2026")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
+_DEV_FALLBACK_KEY = "smartsched-super-secure-production-secret-key-2026"
+SECRET_KEY = settings.JWT_SECRET_KEY
+if settings.ENVIRONMENT == "production" and (not SECRET_KEY or SECRET_KEY == _DEV_FALLBACK_KEY):
+    raise RuntimeError("JWT_SECRET_KEY environment variable must be set to a secure random value in production.")
+ALGORITHM = settings.JWT_ALGORITHM
+ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
