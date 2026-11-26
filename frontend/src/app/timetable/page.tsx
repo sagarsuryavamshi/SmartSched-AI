@@ -47,6 +47,36 @@ export default function TimetablePage() {
   // Selected Session for Detail Modal
   const [activeSession, setActiveSession] = useState<ScheduledSession | null>(null);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [exportLoading, setExportLoading] = useState<"csv" | "pdf" | null>(null);
+  const [exportToast, setExportToast] = useState<string | null>(null);
+
+  const handleDownload = async (format: "csv" | "pdf") => {
+    setExportLoading(format);
+    setExportToast(`Preparing ${format.toUpperCase()} export...`);
+    try {
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+      const res = await fetch(`${apiBase}/timetable/export/${format}`);
+      if (!res.ok) {
+        throw new Error(`Server returned status ${res.status}`);
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `smartsched_academic_timetable.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      setExportToast(`Downloaded ${format.toUpperCase()} successfully!`);
+      setTimeout(() => setExportToast(null), 3000);
+    } catch (err: any) {
+      setExportToast(`Download failed: ${err.message}`);
+      setTimeout(() => setExportToast(null), 4000);
+    } finally {
+      setExportLoading(null);
+    }
+  };
 
   // Active Sessions Data (From verified persistent schedule)
   const [sessions] = useState<ScheduledSession[]>(INITIAL_SCHEDULED_SESSIONS);
@@ -506,34 +536,55 @@ export default function TimetablePage() {
         >
           <div className="space-y-4 text-xs">
             <p className="text-slate-600 leading-relaxed">
-              Timetable exports are formatted directly from active database records using the Python export engine (<code>src/utils/export_service.py</code>).
+              Timetable exports are dynamically compiled directly from active university timetable records using the Python export engine.
             </p>
 
-            <div className="space-y-2">
-              <div className="p-3.5 rounded-lg border border-slate-200 hover:bg-slate-50 flex items-center justify-between">
+            {exportToast && (
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-800 text-[11px] flex items-center gap-2">
+                <Info className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                <span>{exportToast}</span>
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-slate-50 flex items-center justify-between">
                 <div>
                   <span className="font-bold text-navy-900 block">Department Timetable (CSV)</span>
                   <span className="text-[11px] text-slate-500">Standard tabular format for academic registrar systems.</span>
                 </div>
-                <Badge variant="info">Ready</Badge>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => handleDownload("csv")}
+                  disabled={exportLoading !== null}
+                  className="text-xs bg-emerald-600 hover:bg-emerald-700"
+                >
+                  <Download className="w-3.5 h-3.5 mr-1.5" />
+                  <span>{exportLoading === "csv" ? "Exporting..." : "Download CSV"}</span>
+                </Button>
               </div>
 
-              <div className="p-3.5 rounded-lg border border-slate-200 hover:bg-slate-50 flex items-center justify-between">
+              <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-slate-50 flex items-center justify-between">
                 <div>
                   <span className="font-bold text-navy-900 block">Certified PDF Schedule Matrix</span>
                   <span className="text-[11px] text-slate-500">Institutional printable grid with dean signature blocks.</span>
                 </div>
-                <Badge variant="info">Ready</Badge>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => handleDownload("pdf")}
+                  disabled={exportLoading !== null}
+                  className="text-xs bg-red-600 hover:bg-red-700"
+                >
+                  <Download className="w-3.5 h-3.5 mr-1.5" />
+                  <span>{exportLoading === "pdf" ? "Generating..." : "Download PDF"}</span>
+                </Button>
               </div>
             </div>
 
-            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-900 text-[11px]">
-              Full live binary streaming will connect to <code>GET /api/v1/timetable/export/csv</code> and <code>/pdf</code> via FastAPI.
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
               <Button variant="outline" size="sm" onClick={() => setIsExportModalOpen(false)}>
-                Dismiss
+                Close
               </Button>
             </div>
           </div>
