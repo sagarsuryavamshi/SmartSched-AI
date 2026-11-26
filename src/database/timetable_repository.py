@@ -71,7 +71,12 @@ def load_saved_timetable(
     room_id: Optional[str] = None,
     db_path: str = DEFAULT_DB_PATH,
 ) -> List[Dict[str, Any]]:
-    """Retrieves saved timetable schedule records with joined course, faculty, room, and timeslot details."""
+    """Retrieves saved timetable schedule records with joined course, faculty, room, and timeslot details.
+    Supports PostgreSQL if DATABASE_URL is set, otherwise falls back to SQLite db_path.
+    """
+    database_url = os.getenv("DATABASE_URL")
+    is_postgres = database_url and database_url.startswith("postgresql")
+
     query = """
         SELECT
             sa.id,
@@ -100,18 +105,19 @@ def load_saved_timetable(
         JOIN timeslots ts ON sa.slot_id = ts.slot_id
         WHERE 1=1
     """
+    placeholder = "%s" if is_postgres else "?"
     params: List[Any] = []
     if run_id:
-        query += " AND sa.generation_run_id = ?"
+        query += f" AND sa.generation_run_id = {placeholder}"
         params.append(run_id)
     if group_id:
-        query += " AND sa.group_id = ?"
+        query += f" AND sa.group_id = {placeholder}"
         params.append(group_id)
     if faculty_id:
-        query += " AND sa.faculty_id = ?"
+        query += f" AND sa.faculty_id = {placeholder}"
         params.append(faculty_id)
     if room_id:
-        query += " AND sa.room_id = ?"
+        query += f" AND sa.room_id = {placeholder}"
         params.append(room_id)
 
     query += """
@@ -127,6 +133,21 @@ def load_saved_timetable(
             END,
             ts.start_time ASC
     """
+
+    if is_postgres:
+        import psycopg2
+        from psycopg2.extras import RealDictCursor
+        try:
+            conn = psycopg2.connect(database_url)
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            cur.execute(query, params)
+            rows = cur.fetchall()
+            cur.close()
+            conn.close()
+            if rows:
+                return [dict(r) for r in rows]
+        except Exception as e:
+            logger.error("Error loading timetable from PostgreSQL: %s", e)
 
     with get_db_connection(db_path) as conn:
         cursor = conn.cursor()

@@ -56,22 +56,113 @@ export default function TimetablePage() {
     try {
       const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
       const res = await fetch(`${apiBase}/timetable/export/${format}`);
-      if (!res.ok) {
-        throw new Error(`Server returned status ${res.status}`);
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `smartsched_academic_timetable.${format}`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        setExportToast(`Downloaded ${format.toUpperCase()} successfully!`);
+        setTimeout(() => setExportToast(null), 3000);
+        return;
       }
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `smartsched_academic_timetable.${format}`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-      setExportToast(`Downloaded ${format.toUpperCase()} successfully!`);
-      setTimeout(() => setExportToast(null), 3000);
-    } catch (err: any) {
-      setExportToast(`Download failed: ${err.message}`);
+    } catch (backendErr) {
+      console.warn("Backend export request failed, falling back to client generation:", backendErr);
+    }
+
+    // Client-side fallback if backend export returned an error or is waking up
+    try {
+      if (format === "csv") {
+        const headers = ["Assignment ID", "Course Code", "Course Title", "Category", "Day", "Start Time", "End Time", "Classroom", "Instructor", "Cohort"];
+        const rows = sessions.map((s) => [
+          `"${s.assignment_id || ""}"`,
+          `"${s.course_code || ""}"`,
+          `"${s.course_title || ""}"`,
+          `"${s.course_category || "Theory"}"`,
+          `"${s.day || ""}"`,
+          `"${s.start_time || ""}"`,
+          `"${s.end_time || ""}"`,
+          `"${s.room_name || s.room_id || ""}"`,
+          `"${s.faculty_name || ""}"`,
+          `"${s.group_name || ""}"`,
+        ]);
+        const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+        const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `smartsched_academic_timetable.csv`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        setExportToast("Downloaded CSV successfully!");
+        setTimeout(() => setExportToast(null), 3000);
+      } else {
+        // PDF client printable document fallback
+        const printWindow = window.open("", "_blank");
+        if (printWindow) {
+          printWindow.document.write(`
+            <html>
+              <head>
+                <title>SmartSched AI - Academic Timetable</title>
+                <style>
+                  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 24px; color: #0f172a; }
+                  h1 { color: #0f2d59; font-size: 20px; margin-bottom: 4px; }
+                  p { color: #64748b; font-size: 12px; margin-top: 0; margin-bottom: 16px; }
+                  table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 12px; }
+                  th, td { border: 1px solid #cbd5e1; padding: 8px 10px; text-align: left; }
+                  th { background: #f1f5f9; font-weight: 700; color: #0f2d59; }
+                  tr:nth-child(even) { background: #f8fafc; }
+                  .badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; background: #e0f2fe; color: #0369a1; }
+                </style>
+              </head>
+              <body>
+                <h1>SmartSched AI — Certified Academic Timetable Matrix</h1>
+                <p>Institutional schedule generated via Constraint-Based Optimization. Total active sessions: ${sessions.length}</p>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Day</th>
+                      <th>Time Slot</th>
+                      <th>Course</th>
+                      <th>Classroom</th>
+                      <th>Instructor</th>
+                      <th>Student Cohort</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${sessions.map((s) => `
+                      <tr>
+                        <td><strong>${s.day}</strong></td>
+                        <td>${s.start_time} - ${s.end_time}</td>
+                        <td><strong>${s.course_code}</strong>: ${s.course_title}</td>
+                        <td>${s.room_name || s.room_id}</td>
+                        <td>${s.faculty_name}</td>
+                        <td><span class="badge">${s.group_name}</span></td>
+                      </tr>
+                    `).join("")}
+                  </tbody>
+                </table>
+                <script>
+                  window.onload = function() { window.print(); }
+                </script>
+              </body>
+            </html>
+          `);
+          printWindow.document.close();
+          setExportToast("PDF Print Document generated!");
+          setTimeout(() => setExportToast(null), 3000);
+        } else {
+          throw new Error("Popup blocked. Please allow popups to print/save PDF.");
+        }
+      }
+    } catch (fallbackErr: any) {
+      setExportToast(`Export failed: ${fallbackErr.message}`);
       setTimeout(() => setExportToast(null), 4000);
     } finally {
       setExportLoading(null);
