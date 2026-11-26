@@ -1,5 +1,6 @@
 """Database persistence and retrieval services for scheduled academic timetables."""
 
+import os
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 from src.csp_engine.domain_types import SchedulingAssignmentValue, SchedulingVariable
