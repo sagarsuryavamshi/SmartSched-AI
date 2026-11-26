@@ -12,7 +12,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.app.core.config import settings
 from backend.app.api.v1.router import api_router
-from src.database.db_manager import init_db
+from backend.app.api.v1.endpoints.auth import bootstrap_admin_from_env
+from src.database.db_manager import ensure_runtime_tables, init_db
 from src.data_management.loader import seed_synthetic_data
 
 app = FastAPI(
@@ -25,12 +26,14 @@ app = FastAPI(
 
 @app.on_event("startup")
 def startup_event():
-    """Ensure local SQLite database schema and baseline data exist when not using external PostgreSQL."""
-    if os.getenv("DATABASE_URL", "").startswith("postgresql"):
-        return
+    """Ensure database schema, runtime auth/job tables, and baseline data exist upon server boot."""
     db_file = str(settings.DB_PATH)
-    init_db(db_file)
-    seed_synthetic_data(db_file, overwrite=False)
+    if not os.getenv("DATABASE_URL", "").startswith("postgresql"):
+        init_db(db_file)
+        seed_synthetic_data(db_file, overwrite=False)
+    else:
+        ensure_runtime_tables(db_file)
+    bootstrap_admin_from_env(db_file)
 
 # CORS configuration
 app.add_middleware(

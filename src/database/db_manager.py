@@ -229,6 +229,28 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
         status TEXT DEFAULT 'COMMITTED',
         reason TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        full_name TEXT NOT NULL,
+        email TEXT NOT NULL,
+        hashed_password TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'viewer',
+        disabled INTEGER NOT NULL DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS optimization_jobs (
+        job_id TEXT PRIMARY KEY,
+        job_type TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'queued',
+        created_at REAL NOT NULL,
+        started_at REAL,
+        completed_at REAL,
+        result_json TEXT,
+        error TEXT
+    );
     """
     with get_db_connection(db_path) as conn:
         conn.executescript(schema_sql)
@@ -242,3 +264,58 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
         _ensure_column_exists(conn, "timeslots", "is_break", "INTEGER DEFAULT 0")
 
     logger.info("Database schema initialized and migrated successfully at %s", db_path)
+
+
+def ensure_runtime_tables(db_path: str = DEFAULT_DB_PATH) -> None:
+    """Idempotently ensures `users` and `optimization_jobs` tables exist in SQLite or PostgreSQL."""
+    if is_postgres_active(db_path):
+        pg_ddl = """
+        CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
+            username VARCHAR(100) UNIQUE NOT NULL,
+            full_name VARCHAR(150) NOT NULL,
+            email VARCHAR(150) NOT NULL,
+            hashed_password TEXT NOT NULL,
+            role VARCHAR(20) NOT NULL DEFAULT 'viewer',
+            disabled BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS optimization_jobs (
+            job_id VARCHAR(100) PRIMARY KEY,
+            job_type VARCHAR(50) NOT NULL,
+            status VARCHAR(30) NOT NULL DEFAULT 'queued',
+            created_at DOUBLE PRECISION NOT NULL,
+            started_at DOUBLE PRECISION,
+            completed_at DOUBLE PRECISION,
+            result_json TEXT,
+            error TEXT
+        );
+        """
+        with get_db_connection(db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(pg_ddl)
+        return
+
+    with get_db_connection(db_path) as conn:
+        conn.executescript("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            full_name TEXT NOT NULL,
+            email TEXT NOT NULL,
+            hashed_password TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'viewer',
+            disabled INTEGER NOT NULL DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS optimization_jobs (
+            job_id TEXT PRIMARY KEY,
+            job_type TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'queued',
+            created_at REAL NOT NULL,
+            started_at REAL,
+            completed_at REAL,
+            result_json TEXT,
+            error TEXT
+        );
+        """)

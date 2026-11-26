@@ -12,15 +12,14 @@ from src.csp_engine.solver_types import SolverConfig, SolverResult
 from src.ga_engine.genetic_solver import GeneticSolver, GAConfig, GAResult
 from src.ga_engine.benchmark import run_comparative_benchmark
 from src.database.timetable_repository import save_timetable_solution
+from src.database.job_repository import create_job, get_job, update_job_status
 
 router = APIRouter()
 DB_PATH = str(settings.DB_PATH)
 
-JOBS: Dict[str, Dict[str, Any]] = {}
 
 def execute_csp_job(job_id: str, config: CSPSolverRequest):
-    JOBS[job_id]["status"] = "running"
-    JOBS[job_id]["started_at"] = time.time()
+    update_job_status(job_id, status="running", started_at=time.time(), db_path=DB_PATH)
     try:
         model = CSPModel.build_from_db(DB_PATH)
         solver = CSPSolver(model)
@@ -44,9 +43,7 @@ def execute_csp_job(job_id: str, config: CSPSolverRequest):
                 db_path=DB_PATH
             )
 
-        JOBS[job_id]["status"] = "completed"
-        JOBS[job_id]["completed_at"] = time.time()
-        JOBS[job_id]["result"] = {
+        result_payload = {
             "success": res.is_solution_found,
             "status": res.status.value if hasattr(res.status, 'value') else str(res.status),
             "run_id": run_id if saved else None,
@@ -58,14 +55,13 @@ def execute_csp_job(job_id: str, config: CSPSolverRequest):
             "total_variables": len(model.variables),
             "message": res.message
         }
+        update_job_status(job_id, status="completed", result=result_payload, completed_at=time.time(), db_path=DB_PATH)
     except Exception as e:
-        JOBS[job_id]["status"] = "failed"
-        JOBS[job_id]["completed_at"] = time.time()
-        JOBS[job_id]["error"] = str(e)
+        update_job_status(job_id, status="failed", error=str(e), completed_at=time.time(), db_path=DB_PATH)
+
 
 def execute_ga_job(job_id: str, config: GASolverRequest):
-    JOBS[job_id]["status"] = "running"
-    JOBS[job_id]["started_at"] = time.time()
+    update_job_status(job_id, status="running", started_at=time.time(), db_path=DB_PATH)
     try:
         model = CSPModel.build_from_db(DB_PATH)
         ga_cfg = GAConfig(
@@ -91,9 +87,7 @@ def execute_ga_job(job_id: str, config: GASolverRequest):
                 db_path=DB_PATH
             )
 
-        JOBS[job_id]["status"] = "completed"
-        JOBS[job_id]["completed_at"] = time.time()
-        JOBS[job_id]["result"] = {
+        result_payload = {
             "success": res.is_solution_found,
             "status": res.status,
             "run_id": run_id if saved else None,
@@ -103,14 +97,13 @@ def execute_ga_job(job_id: str, config: GASolverRequest):
             "hard_violations": res.best_chromosome.hard_violations_count if res.best_chromosome else 999,
             "soft_penalty": res.best_chromosome.soft_penalty if res.best_chromosome else 999.0
         }
+        update_job_status(job_id, status="completed", result=result_payload, completed_at=time.time(), db_path=DB_PATH)
     except Exception as e:
-        JOBS[job_id]["status"] = "failed"
-        JOBS[job_id]["completed_at"] = time.time()
-        JOBS[job_id]["error"] = str(e)
+        update_job_status(job_id, status="failed", error=str(e), completed_at=time.time(), db_path=DB_PATH)
+
 
 def execute_benchmark_job(job_id: str, config: BenchmarkRequest):
-    JOBS[job_id]["status"] = "running"
-    JOBS[job_id]["started_at"] = time.time()
+    update_job_status(job_id, status="running", started_at=time.time(), db_path=DB_PATH)
     try:
         model = CSPModel.build_from_db(DB_PATH)
         csp_cfg = SolverConfig(
@@ -129,18 +122,15 @@ def execute_benchmark_job(job_id: str, config: BenchmarkRequest):
             ga_timeout=config.ga_timeout
         )
 
-        JOBS[job_id]["status"] = "completed"
-        JOBS[job_id]["completed_at"] = time.time()
-        JOBS[job_id]["result"] = {
+        result_payload = {
             "comparison_table": bench.comparison_table,
             "backtracking_metrics": bench.backtracking_metrics,
             "ga_aggregate_metrics": bench.ga_aggregate_metrics,
             "dataset_variables_count": bench.dataset_variables_count
         }
+        update_job_status(job_id, status="completed", result=result_payload, completed_at=time.time(), db_path=DB_PATH)
     except Exception as e:
-        JOBS[job_id]["status"] = "failed"
-        JOBS[job_id]["completed_at"] = time.time()
-        JOBS[job_id]["error"] = str(e)
+        update_job_status(job_id, status="failed", error=str(e), completed_at=time.time(), db_path=DB_PATH)
 
 @router.post("/csp/solve-backtracking", dependencies=[Depends(require_admin)])
 def solve_csp(payload: CSPSolverRequest, background_tasks: BackgroundTasks, async_mode: bool = False):
@@ -181,7 +171,7 @@ def solve_csp(payload: CSPSolverRequest, background_tasks: BackgroundTasks, asyn
         }
     
     job_id = str(uuid.uuid4())
-    JOBS[job_id] = {"job_id": job_id, "type": "csp", "status": "queued", "created_at": time.time()}
+    create_job(job_id=job_id, job_type="csp", status="queued", db_path=DB_PATH)
     background_tasks.add_task(execute_csp_job, job_id, payload)
     return {"job_id": job_id, "status": "queued", "message": "CSP optimization job dispatched"}
 
@@ -224,7 +214,7 @@ def solve_ga(payload: GASolverRequest, background_tasks: BackgroundTasks, async_
         }
 
     job_id = str(uuid.uuid4())
-    JOBS[job_id] = {"job_id": job_id, "type": "ga", "status": "queued", "created_at": time.time()}
+    create_job(job_id=job_id, job_type="ga", status="queued", db_path=DB_PATH)
     background_tasks.add_task(execute_ga_job, job_id, payload)
     return {"job_id": job_id, "status": "queued", "message": "Genetic Algorithm optimization job dispatched"}
 
@@ -255,12 +245,13 @@ def run_benchmark(payload: BenchmarkRequest, background_tasks: BackgroundTasks, 
         }
 
     job_id = str(uuid.uuid4())
-    JOBS[job_id] = {"job_id": job_id, "type": "benchmark", "status": "queued", "created_at": time.time()}
+    create_job(job_id=job_id, job_type="benchmark", status="queued", db_path=DB_PATH)
     background_tasks.add_task(execute_benchmark_job, job_id, payload)
     return {"job_id": job_id, "status": "queued", "message": "Comparative benchmark job dispatched"}
 
 @router.get("/jobs/{job_id}")
 def get_job_status(job_id: str):
-    if job_id not in JOBS:
+    job = get_job(job_id, db_path=DB_PATH)
+    if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    return JOBS[job_id]
+    return job

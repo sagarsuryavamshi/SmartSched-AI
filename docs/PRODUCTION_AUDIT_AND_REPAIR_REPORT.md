@@ -207,3 +207,22 @@
 3. Verify Render deploys the updated backend with `DATABASE_URL` (Neon), `ENVIRONMENT=production`, and `JWT_SECRET_KEY` set.
 4. Verify Vercel deploys the updated Next.js frontend with `NEXT_PUBLIC_API_URL=https://smartsched-backend-7aba.onrender.com/api/v1`.
 5. Sign in via the TopNav **Sign In** button (`admin`) to perform administrative CRUD, optimization, or rescheduling commits.
+
+---
+
+## FINAL RELEASE BLOCKER VERIFICATION
+
+| Release Blocker / Check | Status | Verification Details |
+| :--- | :---: | :--- |
+| **Task 1: Persistent Authentication** | **FIXED / PASS** | Replaced in-memory `USERS_DB` with persistent `users` table (`src/database/user_repository.py`, `db_manager.py`). Passwords hashed with bcrypt (`passlib`), zero hardcoded/default credentials in source, public admin registration blocked (`401`/`403` on `POST /api/v1/auth/users`), and safe CLI bootstrap added (`backend/scripts/bootstrap_admin.py`). |
+| **Task 2: Auth Security Review** | **FIXED / PASS** | Production `ENVIRONMENT=production` enforces non-default `JWT_SECRET_KEY` at startup; 24h JWT expiration (`HS256`); `HttpOnly` + `Secure` + `SameSite=None` cookies in production; RBAC enforced on all mutating endpoints. |
+| **Task 3: Browser End-to-End Testing (Playwright)** | **PASS** | Executed headless Chromium (`tests/e2e_playwright_suite.py`) against isolated local Next.js (`:3005`) + FastAPI (`:8000`) + temp SQLite DB: **13/13 PASS** (Dashboard, Login error state, Admin Login, Faculty availability tab, Timeslots & Breaks tab, GA generation, CSP generation, Live Timetable, Live Analytics, Live Violation Inspector, Rescheduling Preview & History, Mobile drawer `375x812`, Logout). Live production Vercel/Render browser E2E: **NOT TESTED** (per production safety rules). |
+| **Task 4: PostgreSQL Integration** | **PASS** | All backend modules (`resources`, `optimization`, `timetable`, `analytics`, `rescheduling`, `auth`, `jobs`) route through `get_db_connection(DB_PATH)` / `DATABASE_URL` to Neon PostgreSQL in production, while isolated temp `db_path` tests and Streamlit fallback retain SQLite support. |
+| **Task 5: Job Persistence** | **FIXED / PASS** | Replaced in-memory `JOBS` dictionary with persistent `optimization_jobs` table (`src/database/job_repository.py`) surviving Render restarts/spin-downs. |
+| **Task 6: Release Verification** | **PASS** | Python suite: **116 / 116 PASS** (`17.728s`); TypeScript (`tsc --noEmit`): **PASS**; ESLint: **PASS**; Next.js build: **PASS** (`15/15` static pages); Streamlit `py_compile`: **PASS**; zero secrets or `.db` files committed. |
+| **Task 7: Git Release Status** | **PASS** | Branch: `audit-and-repair` pushed to GitHub; `main` untouched (`ce65f56`). |
+
+### Final Recommendation: **READY TO MERGE**
+
+All release blockers have been resolved, verified with automated unit, integration, API, security, and Playwright browser tests, and pushed to `audit-and-repair`. Awaiting user approval before merging into `main`.
+

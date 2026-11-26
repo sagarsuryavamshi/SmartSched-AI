@@ -18,7 +18,10 @@ from pydantic import BaseModel
 from backend.app.core.config import settings
 
 # Security settings
+_DEV_FALLBACK_KEY = "smartsched-super-secure-production-secret-key-2026"
 SECRET_KEY = settings.JWT_SECRET_KEY
+if settings.ENVIRONMENT == "production" and (not SECRET_KEY or SECRET_KEY == _DEV_FALLBACK_KEY):
+    raise RuntimeError("JWT_SECRET_KEY environment variable must be set to a secure random value in production.")
 ALGORITHM = settings.JWT_ALGORITHM
 ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
 

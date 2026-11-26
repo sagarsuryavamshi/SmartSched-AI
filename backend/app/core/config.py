@@ -12,7 +12,7 @@ class Settings:
     # Paths
     BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent.parent
     DATA_DIR: Path = BASE_DIR / "data"
-    DB_PATH: Path = DATA_DIR / "smartsched.db"
+    DB_PATH: Path = Path(os.getenv("SMARTSCHED_DB_PATH", str(DATA_DIR / "smartsched.db")))
     
     # Database URL: defaults to PostgreSQL if set, otherwise SQLite fallback
     DATABASE_URL: str = os.getenv(

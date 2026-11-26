@@ -8,14 +8,24 @@ if str(BASE_DIR) not in sys.path:
 
 from fastapi.testclient import TestClient
 from backend.app.main import app
+from backend.app.core.config import settings
+from backend.app.core.security import get_password_hash
+from src.database.user_repository import create_user, get_user_by_username
 
 class TestFastAPIEndpoints(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.client = TestClient(app)
-        r_admin = cls.client.post("/api/v1/auth/login", json={"username": "admin", "password": "Admin@SmartSched2026"})
+        db_path = str(settings.DB_PATH)
+        admin_pw = "TestApiAdmin#2026"
+        viewer_pw = "TestApiViewer#2026"
+        if not get_user_by_username("api_test_admin", db_path=db_path):
+            create_user("api_test_admin", "API Admin", "api_admin@test.edu", get_password_hash(admin_pw), "admin", db_path=db_path)
+        if not get_user_by_username("api_test_viewer", db_path=db_path):
+            create_user("api_test_viewer", "API Viewer", "api_viewer@test.edu", get_password_hash(viewer_pw), "viewer", db_path=db_path)
+        r_admin = cls.client.post("/api/v1/auth/login", json={"username": "api_test_admin", "password": admin_pw})
         cls.admin_headers = {"Authorization": f"Bearer {r_admin.json()['access_token']}"}
-        r_viewer = cls.client.post("/api/v1/auth/login", json={"username": "viewer", "password": "Viewer@SmartSched2026"})
+        r_viewer = cls.client.post("/api/v1/auth/login", json={"username": "api_test_viewer", "password": viewer_pw})
         cls.viewer_headers = {"Authorization": f"Bearer {r_viewer.json()['access_token']}"}
 
     def test_01_health_check(self):
