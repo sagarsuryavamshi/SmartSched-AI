@@ -29,7 +29,7 @@ import { DayOfWeek } from "@/types";
 const DAYS: DayOfWeek[] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 
 export default function TimetablePage() {
-  const { faculty, classrooms, studentGroups, courses, timeslots } = useResources();
+  const { faculty, classrooms, studentGroups, timeslots } = useResources();
 
   // Primary Perspective
   const [perspective, setPerspective] = useState<TimetablePerspective>("DEPARTMENT_MASTER");

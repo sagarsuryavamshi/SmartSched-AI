@@ -7,16 +7,14 @@ import {
   Dna,
   Scale,
   Sliders,
-  Play,
   ArrowRight,
   ShieldCheck,
   CheckCircle2,
   Clock,
-  Award,
   Info,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { Card, CardHeader } from "@/components/ui/Card";
+import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { KpiCard } from "@/components/ui/KpiCard";

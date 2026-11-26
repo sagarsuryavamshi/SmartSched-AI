@@ -4,15 +4,10 @@ import React, { useState } from "react";
 import {
   Dna,
   Play,
-  Sliders,
-  ShieldCheck,
   Award,
-  Clock,
   RotateCcw,
   BookOpen,
   Info,
-  AlertTriangle,
-  CheckCircle2,
   TrendingDown,
 } from "lucide-react";
 import {
@@ -29,7 +24,6 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { KpiCard } from "@/components/ui/KpiCard";
 import { GAHyperparameters, GAResultPayload } from "@/types/solver";
 import { FIXTURE_GA_RESULT } from "@/types/fixtures";
 import { ApiClient } from "@/services/apiClient";
@@ -49,7 +43,7 @@ export default function GeneticPage() {
   });
 
   // Soft objective weights
-  const [softWeights, setSoftWeights] = useState({
+  const [softWeights] = useState({
     s1: 1.0,
     s2: 2.0,
     s3: 1.5,

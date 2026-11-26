@@ -8,7 +8,6 @@ import {
   BookOpen,
   Info,
   CheckCircle2,
-  AlertTriangle,
   Zap,
   Award,
 } from "lucide-react";
@@ -26,7 +25,6 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { KpiCard } from "@/components/ui/KpiCard";
 import { BenchmarkResultPayload } from "@/types/solver";
 import { FIXTURE_BENCHMARK_RESULT } from "@/types/fixtures";
 import { ApiClient } from "@/services/apiClient";

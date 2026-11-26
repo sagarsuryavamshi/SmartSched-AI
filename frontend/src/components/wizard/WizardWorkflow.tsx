@@ -2,7 +2,6 @@
 
 import React, { useState } from "react";
 import {
-  Sparkles,
   ChevronRight,
   ChevronLeft,
   Check,
@@ -23,7 +22,6 @@ import {
   AlertTriangle,
   Info,
   CheckCircle2,
-  XCircle,
   FileSpreadsheet,
   FileText,
   ExternalLink,
@@ -97,9 +95,6 @@ export function WizardWorkflow() {
   const selectedRooms = classrooms.filter((r) => state.selectedRoomIds.includes(r.room_id));
   const activeTeachingSlots = timeslots.filter((s) => !s.is_break);
   const breakSlots = timeslots.filter((s) => s.is_break);
-
-  // Compute total weekly lecture hours
-  const totalWeeklyHours = selectedCourses.reduce((acc, c) => acc + c.weekly_hours, 0);
 
   const handleNext = () => {
     const val = validateCurrentStep(currentStep);
@@ -396,13 +391,7 @@ export function WizardWorkflow() {
 
         {currentStep === 8 && <Step8SoftObjectiveScoring softWeights={state.softWeights} />}
 
-        {currentStep === 9 && (
-          <Step9WeeklyTimetableGrid
-            selectedGroups={selectedGroups}
-            faculty={faculty}
-            classrooms={selectedRooms}
-          />
-        )}
+        {currentStep === 9 && <Step9WeeklyTimetableGrid />}
 
         {currentStep === 10 && (
           <Step10ReviewAndExport
@@ -413,9 +402,6 @@ export function WizardWorkflow() {
             activeTeachingSlots={activeTeachingSlots}
             breakSlots={breakSlots}
             onNavigateStep={(s: number) => setCurrentStep(s)}
-            dispatchStatus={dispatchStatus}
-            onDispatch={handleSubmitOptimization}
-            isSubmitting={isSubmitting}
             onDownload={handleDownloadExport}
             downloadToast={downloadToast}
           />
@@ -656,7 +642,6 @@ function Step2ResourceReview({
   studentGroups,
   classrooms,
   faculty,
-  timeslots,
   selectedCourseIds,
   selectedGroupIds,
   selectedRoomIds,
@@ -874,11 +859,9 @@ function Step2ResourceReview({
 /* ---------------- STEP 3: CSP COMPILATION ---------------- */
 function Step3CSPCompilation({
   selectedCourses,
-  selectedGroups,
   selectedRooms,
   activeTeachingSlots,
   breakSlots,
-  faculty,
 }: any) {
   // Approximate variable calculation: 1 variable per weekly lecture hour, 2-hour lab = 1 atomic block session
   const totalVars = selectedCourses.reduce((a: number, c: any) => a + (c.is_lab ? 1 : c.weekly_hours), 0);
@@ -1569,7 +1552,7 @@ function Step8SoftObjectiveScoring({ softWeights }: { softWeights: any }) {
 }
 
 /* ---------------- STEP 9: WEEKLY TIMETABLE GRID ---------------- */
-function Step9WeeklyTimetableGrid({ selectedGroups, faculty, classrooms }: any) {
+function Step9WeeklyTimetableGrid() {
   return (
     <Card className="p-6 space-y-6">
       <CardHeader
@@ -1656,9 +1639,6 @@ function Step10ReviewAndExport({
   activeTeachingSlots,
   breakSlots,
   onNavigateStep,
-  dispatchStatus,
-  onDispatch,
-  isSubmitting,
   onDownload,
   downloadToast,
 }: any) {
